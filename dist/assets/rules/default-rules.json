@@ -1,26 +1,4 @@
 {
-  "registryCache": {
-    "prefix": "registry-cache.local"
-  },
-  "registryMirrors": [
-    {
-      "source": "ghcr.io",
-      "target": "ghcr-cache.local"
-    },
-    {
-      "source": "quay.io",
-      "target": "quay-cache.local"
-    }
-  ],
-  "envTranslations": [
-    {
-      "service": "*",
-      "from": "HTTP_PROXY",
-      "to": "HTTPS_PROXY",
-      "remove": false,
-      "set": {}
-    }
-  ],
   "baseIdeContainer": {
     "name": "tool",
     "image": "quay.io/devfile/universal-developer-image:latest",

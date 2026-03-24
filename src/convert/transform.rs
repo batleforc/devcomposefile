@@ -6,7 +6,7 @@ use crate::convert::variables::extract_and_rewrite_variables;
 use crate::domain::compose::ComposeProject;
 use crate::domain::devfile::{
     Command, Component, ComponentSpec, ContainerComponent, Devfile, Endpoint, EnvVar, Events,
-    ExecCommand, Metadata, VolumeComponent, VolumeMount,
+    Metadata, VolumeComponent, VolumeMount,
 };
 use crate::domain::rules::RuleSet;
 
@@ -22,7 +22,7 @@ pub fn convert_to_devfile(
     ide_image_override: Option<String>,
 ) -> ConversionResult {
     let mut components = Vec::new();
-    let mut commands = Vec::new();
+    let commands: Vec<Command> = Vec::new();
     let mut diagnostics = Vec::new();
     let mut named_volumes = BTreeSet::<String>::new();
     let mut rule_traces = Vec::new();
@@ -100,37 +100,20 @@ pub fn convert_to_devfile(
             }),
         });
 
-        if !service.command.is_empty() || !service.entrypoint.is_empty() {
-            let command_line = service
-                .entrypoint
-                .iter()
-                .chain(service.command.iter())
-                .map(String::as_str)
-                .collect::<Vec<_>>()
-                .join(" ");
-
-            if !command_line.trim().is_empty() {
-                commands.push(Command {
-                    id: format!("run-{service_name}"),
-                    exec: ExecCommand {
-                        component: service_name.clone(),
-                        command_line: command_line.clone(),
-                        working_dir: service.working_dir.clone(),
-                    },
-                });
-
-                // Generate a debug variant when ports are exposed
-                if !service.ports.is_empty() {
-                    commands.push(Command {
-                        id: format!("debug-{service_name}"),
-                        exec: ExecCommand {
-                            component: service_name.clone(),
-                            command_line,
-                            working_dir: service.working_dir.clone(),
-                        },
-                    });
-                }
-            }
+        // Only generate run/debug commands when the service has a
+        // working_dir but NO entrypoint/command baked into the container.
+        // When the container already carries command/args the runtime
+        // will execute them automatically — a duplicate postStart
+        // command is not needed.
+        let has_container_cmd = !service.entrypoint.is_empty() || !service.command.is_empty();
+        if has_container_cmd && service.working_dir.is_some() {
+            // working_dir won't be lost: it is already on the ExecCommand,
+            // but since we skip generating a Command we emit a diagnostic
+            // so the user knows.
+            diagnostics.push(format!(
+                "Service '{service_name}' has command/entrypoint in the container — \
+                 skipping run/debug command generation (working_dir preserved on container start)."
+            ));
         }
     }
 

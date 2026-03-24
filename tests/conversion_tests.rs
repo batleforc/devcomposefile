@@ -155,34 +155,39 @@ services:
         panic!("expected container");
     }
 
-    // Debug commands generated for services with ports (web-frontend, db) but not web-backend
+    // Services whose command is already part of the container should
+    // NOT produce run/debug commands or postStart events.
     assert!(
-        result
+        !result
             .devfile
             .commands
             .iter()
-            .any(|c| c.id == "run-web-frontend")
-    );
-    assert!(
-        result
-            .devfile
-            .commands
-            .iter()
-            .any(|c| c.id == "debug-web-frontend")
-    );
-    assert!(
-        result
-            .devfile
-            .commands
-            .iter()
-            .any(|c| c.id == "run-web-backend")
+            .any(|c| c.id == "run-web-frontend"),
+        "run-web-frontend should not exist — command already on container"
     );
     assert!(
         !result
             .devfile
             .commands
             .iter()
-            .any(|c| c.id == "debug-web-backend")
+            .any(|c| c.id == "debug-web-frontend"),
+        "debug-web-frontend should not exist"
+    );
+    assert!(
+        !result
+            .devfile
+            .commands
+            .iter()
+            .any(|c| c.id == "run-web-backend"),
+        "run-web-backend should not exist — command already on container"
+    );
+    assert!(
+        !result
+            .devfile
+            .commands
+            .iter()
+            .any(|c| c.id == "debug-web-backend"),
+        "debug-web-backend should not exist"
     );
 
     // Rule traces recorded
@@ -197,24 +202,23 @@ services:
 
 #[test]
 fn rules_merge_precedence_runtime_overrides_startup_and_defaults() {
-    // Default rules have registryCache prefix "registry-cache.local" (prepend mode)
+    // Default rules now only contain baseIdeContainer (no registryCache, no envTranslations)
     let defaults = load_default_rules().expect("default rules");
-    assert_eq!(
-        defaults.registry_cache.as_ref().unwrap().prefix,
-        "registry-cache.local"
-    );
+    assert!(defaults.registry_cache.is_none());
+    assert!(defaults.env_translations.is_empty());
+    assert!(defaults.base_ide_container.is_some());
 
     // Startup rules have env translations but no registryCache override
     let startup =
         load_rules_from_json(include_str!("../assets/rules/startup-rules.json")).expect("startup");
     let after_startup = merge_rules(&defaults, &startup);
-    // registryCache should still come from defaults
+    // registryCache still absent
+    assert!(after_startup.registry_cache.is_none());
+    // Env translations from startup accumulated
     assert_eq!(
-        after_startup.registry_cache.as_ref().unwrap().prefix,
-        "registry-cache.local"
+        after_startup.env_translations.len(),
+        startup.env_translations.len()
     );
-    // Env translations from both defaults and startup accumulated
-    assert!(after_startup.env_translations.len() > defaults.env_translations.len());
 
     // Runtime rules override registryCache entirely
     let runtime = RuleSet {
@@ -233,7 +237,7 @@ fn rules_merge_precedence_runtime_overrides_startup_and_defaults() {
         final_rules.registry_cache.as_ref().unwrap().mode,
         RegistryCacheMode::Replace
     ));
-    // Env translations from defaults + startup still present (runtime had none)
+    // Env translations from startup still present (runtime had none)
     assert_eq!(
         final_rules.env_translations.len(),
         after_startup.env_translations.len()

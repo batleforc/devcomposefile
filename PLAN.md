@@ -113,6 +113,13 @@ Build a pure frontend Rust + Leptos (WASM) app that converts one or more Docker 
 60. Update `default-rules.json` with example mirrors for `ghcr.io` and `quay.io`.
 61. Add 11 new unit tests (parse_image_parts variants, Prepend/Replace library namespace, mirror override, Docker Hub mirror, fallback to generic cache) and update integration test fixture.
 
+### Phase 17 — Skip redundant postStart commands when container already has command/args ✅ *(depends on Phase 1)*
+
+62. When a Compose service has `entrypoint` and/or `command`, these are already stored as `command`/`args` on the `ContainerComponent`. The runtime executes them automatically on container start.
+63. Remove the code that generated duplicate `run-{service}` and `debug-{service}` `Command` objects and `postStart` events for these services — they were redundant.
+64. Emit an informational diagnostic when a service with a `working_dir` has its command generation skipped, so users know the working directory is respected via the container start mechanism.
+65. Update expected devfile fixture and integration test assertions to reflect the absence of redundant commands/events.
+
 ## Relevant Files
 
 | File | Purpose |
