@@ -7,6 +7,8 @@ use serde::Serialize;
 pub struct Devfile {
     pub schema_version: String,
     pub metadata: Metadata,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent: Option<Parent>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub variables: BTreeMap<String, String>,
     pub components: Vec<Component>,
@@ -14,6 +16,19 @@ pub struct Devfile {
     pub commands: Vec<Command>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub events: Option<Events>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Parent {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub registry_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub uri: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

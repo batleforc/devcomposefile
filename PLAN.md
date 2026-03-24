@@ -120,6 +120,14 @@ Build a pure frontend Rust + Leptos (WASM) app that converts one or more Docker 
 64. Emit an informational diagnostic when a service with a `working_dir` has its command generation skipped, so users know the working directory is respected via the container start mechanism.
 65. Update expected devfile fixture and integration test assertions to reflect the absence of redundant commands/events.
 
+### Phase 18 — Parent devfile alternative to inline IDE container ✅ *(depends on Phase 17)*
+
+66. Add `Parent` struct to `devfile.rs` with `id`, `registry_url`, `uri`, and `version` fields (all optional, camelCase serialization). Insert `parent: Option<Parent>` on the `Devfile` struct between `metadata` and `variables`, skipped when `None`.
+67. Add `ParentDevfileRule` struct to `rules.rs` with matching fields. Add `parent_devfile: Option<ParentDevfileRule>` to `RuleSet` and update `merge_rules()` so extras override base.
+68. Update `convert_to_devfile()` in `transform.rs`: when `parent_devfile` is configured in rules and no `ide_image_override` is provided, emit a `parent` block on the Devfile instead of inserting an inline IDE container. When `ide_image_override` is explicitly set, it takes precedence and falls back to inline IDE container behavior.
+69. Add "Parent Devfile" section to the visual rule editor (`rule_editor.rs`) with fields for registry ID, registry URL, URI (direct link), and version. Include hint text explaining precedence over inline IDE container.
+70. Add 5 integration tests: parent devfile via registry ID, parent devfile via URI, IDE image override takes precedence over parent, parent serialized correctly in YAML output, and parent rule merges correctly with base IDE container rule.
+
 ## Relevant Files
 
 | File | Purpose |

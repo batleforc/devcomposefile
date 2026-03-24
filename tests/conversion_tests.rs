@@ -7,8 +7,8 @@ use devcomposefile::domain::compose::parse_compose_documents;
 use devcomposefile::domain::devfile::ComponentSpec;
 use devcomposefile::domain::git_fetch::{GitProvider, RepoRef, parse_repo_url, raw_content_url};
 use devcomposefile::domain::rules::{
-    EnvTranslationRule, RegistryCacheMode, RegistryCacheRule, RuleSet, load_default_rules,
-    load_rules_from_json, merge_rules,
+    EnvTranslationRule, ParentDevfileRule, RegistryCacheMode, RegistryCacheRule, RuleSet,
+    load_default_rules, load_rules_from_json, merge_rules,
 };
 
 #[test]
@@ -871,4 +871,191 @@ services:
     } else {
         panic!("expected container");
     }
+}
+
+#[test]
+fn parent_devfile_used_instead_of_inline_ide_container() {
+    let compose = r#"
+services:
+  app:
+    image: myapp:latest
+"#;
+    let projects = parse_compose_documents(compose).expect("parse");
+    let merged = merge_projects(projects);
+
+    let rules = RuleSet {
+        parent_devfile: Some(ParentDevfileRule {
+            id: Some(String::from("udi")),
+            registry_url: Some(String::from("https://registry.devfile.io")),
+            uri: None,
+            version: Some(String::from("2.2.0")),
+        }),
+        ..Default::default()
+    };
+
+    let result = convert_to_devfile(merged, rules, None);
+
+    // Parent should be set
+    let parent = result
+        .devfile
+        .parent
+        .as_ref()
+        .expect("parent should be set");
+    assert_eq!(parent.id.as_deref(), Some("udi"));
+    assert_eq!(
+        parent.registry_url.as_deref(),
+        Some("https://registry.devfile.io")
+    );
+    assert_eq!(parent.version.as_deref(), Some("2.2.0"));
+    assert!(parent.uri.is_none());
+
+    // No inline IDE container should be inserted
+    assert!(
+        !result
+            .devfile
+            .components
+            .iter()
+            .any(|c| c.name == "tool" || c.name == "ide")
+    );
+
+    // Service component should still be present
+    assert!(result.devfile.components.iter().any(|c| c.name == "app"));
+
+    // No diagnostic about missing tool container
+    assert!(
+        !result
+            .diagnostics
+            .iter()
+            .any(|d| d.contains("No tool container"))
+    );
+}
+
+#[test]
+fn parent_devfile_uri_mode() {
+    let compose = r#"
+services:
+  app:
+    image: myapp:latest
+"#;
+    let projects = parse_compose_documents(compose).expect("parse");
+    let merged = merge_projects(projects);
+
+    let rules = RuleSet {
+        parent_devfile: Some(ParentDevfileRule {
+            id: None,
+            registry_url: None,
+            uri: Some(String::from(
+                "https://raw.githubusercontent.com/org/repo/main/devfile.yaml",
+            )),
+            version: None,
+        }),
+        ..Default::default()
+    };
+
+    let result = convert_to_devfile(merged, rules, None);
+
+    let parent = result
+        .devfile
+        .parent
+        .as_ref()
+        .expect("parent should be set");
+    assert!(parent.id.is_none());
+    assert_eq!(
+        parent.uri.as_deref(),
+        Some("https://raw.githubusercontent.com/org/repo/main/devfile.yaml")
+    );
+}
+
+#[test]
+fn ide_image_override_takes_precedence_over_parent_devfile() {
+    let compose = r#"
+services:
+  app:
+    image: myapp:latest
+"#;
+    let projects = parse_compose_documents(compose).expect("parse");
+    let merged = merge_projects(projects);
+
+    let rules = RuleSet {
+        parent_devfile: Some(ParentDevfileRule {
+            id: Some(String::from("udi")),
+            registry_url: Some(String::from("https://registry.devfile.io")),
+            uri: None,
+            version: None,
+        }),
+        ..Default::default()
+    };
+
+    // When ide_image_override is provided, it wins over parent devfile
+    let result = convert_to_devfile(
+        merged,
+        rules,
+        Some(String::from("quay.io/devfile/custom-udi:latest")),
+    );
+
+    // No parent — inline IDE container used instead
+    assert!(result.devfile.parent.is_none());
+    assert!(result.devfile.components.iter().any(|c| c.name == "tool"));
+}
+
+#[test]
+fn parent_devfile_serialized_in_yaml_output() {
+    let compose = r#"
+services:
+  web:
+    image: nginx:latest
+"#;
+    let projects = parse_compose_documents(compose).expect("parse");
+    let merged = merge_projects(projects);
+
+    let rules = RuleSet {
+        parent_devfile: Some(ParentDevfileRule {
+            id: Some(String::from("udi")),
+            registry_url: Some(String::from("https://registry.devfile.io")),
+            uri: None,
+            version: None,
+        }),
+        ..Default::default()
+    };
+
+    let result = convert_to_devfile(merged, rules, None);
+    let yaml = serde_yaml::to_string(&result.devfile).expect("serialize");
+
+    assert!(yaml.contains("parent:"));
+    assert!(yaml.contains("id: udi"));
+    assert!(yaml.contains("registryUrl: https://registry.devfile.io"));
+    // No parent.uri since it was None
+    assert!(!yaml.contains("uri:"));
+}
+
+#[test]
+fn parent_devfile_rule_merges_correctly() {
+    let base = RuleSet {
+        base_ide_container: Some(devcomposefile::domain::rules::IdeContainerRule {
+            name: String::from("tool"),
+            image: String::from("quay.io/devfile/udi:latest"),
+            memory_limit: None,
+        }),
+        ..Default::default()
+    };
+
+    let extra = RuleSet {
+        parent_devfile: Some(ParentDevfileRule {
+            id: Some(String::from("udi")),
+            registry_url: None,
+            uri: None,
+            version: None,
+        }),
+        ..Default::default()
+    };
+
+    let merged = merge_rules(&base, &extra);
+    // Parent devfile from extra is merged
+    assert!(merged.parent_devfile.is_some());
+    assert_eq!(
+        merged.parent_devfile.as_ref().unwrap().id.as_deref(),
+        Some("udi")
+    );
+    // Base IDE container is still present (not cleared by parent rule)
+    assert!(merged.base_ide_container.is_some());
 }

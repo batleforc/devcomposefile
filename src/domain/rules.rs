@@ -11,6 +11,7 @@ pub struct RuleSet {
     #[serde(default)]
     pub env_translations: Vec<EnvTranslationRule>,
     pub base_ide_container: Option<IdeContainerRule>,
+    pub parent_devfile: Option<ParentDevfileRule>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -62,6 +63,15 @@ pub struct IdeContainerRule {
     pub memory_limit: Option<String>,
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ParentDevfileRule {
+    pub id: Option<String>,
+    pub registry_url: Option<String>,
+    pub uri: Option<String>,
+    pub version: Option<String>,
+}
+
 fn default_ide_name() -> String {
     String::from("tool")
 }
@@ -97,6 +107,10 @@ pub fn merge_rules(base: &RuleSet, extra: &RuleSet) -> RuleSet {
 
     if extra.base_ide_container.is_some() {
         merged.base_ide_container = extra.base_ide_container.clone();
+    }
+
+    if extra.parent_devfile.is_some() {
+        merged.parent_devfile = extra.parent_devfile.clone();
     }
 
     merged

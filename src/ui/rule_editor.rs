@@ -3,8 +3,8 @@ use std::collections::BTreeMap;
 use leptos::prelude::*;
 
 use crate::domain::rules::{
-    EnvTranslationRule, IdeContainerRule, RegistryCacheMode, RegistryCacheRule, RegistryMirrorRule,
-    RuleSet,
+    EnvTranslationRule, IdeContainerRule, ParentDevfileRule, RegistryCacheMode, RegistryCacheRule,
+    RegistryMirrorRule, RuleSet,
 };
 
 /// Visual rule editor that builds a `RuleSet` JSON via form controls.
@@ -26,6 +26,13 @@ pub fn RuleEditor(runtime_rules_input: RwSignal<String>) -> impl IntoView {
     let ide_name = RwSignal::new(String::from("tool"));
     let ide_image = RwSignal::new(String::new());
     let ide_memory = RwSignal::new(String::new());
+
+    // --- Parent Devfile ---
+    let parent_enabled = RwSignal::new(false);
+    let parent_id = RwSignal::new(String::new());
+    let parent_registry_url = RwSignal::new(String::new());
+    let parent_uri = RwSignal::new(String::new());
+    let parent_version = RwSignal::new(String::new());
 
     // --- Env translations (dynamic list) ---
     let next_id = RwSignal::new(1u32);
@@ -121,11 +128,44 @@ pub fn RuleEditor(runtime_rules_input: RwSignal<String>) -> impl IntoView {
             }
         }
 
+        if parent_enabled.get() {
+            let id = parent_id.get();
+            let registry = parent_registry_url.get();
+            let uri = parent_uri.get();
+            let version = parent_version.get();
+            let has_content = !id.trim().is_empty() || !uri.trim().is_empty();
+            if has_content {
+                ruleset.parent_devfile = Some(ParentDevfileRule {
+                    id: if id.trim().is_empty() {
+                        None
+                    } else {
+                        Some(id.trim().to_string())
+                    },
+                    registry_url: if registry.trim().is_empty() {
+                        None
+                    } else {
+                        Some(registry.trim().to_string())
+                    },
+                    uri: if uri.trim().is_empty() {
+                        None
+                    } else {
+                        Some(uri.trim().to_string())
+                    },
+                    version: if version.trim().is_empty() {
+                        None
+                    } else {
+                        Some(version.trim().to_string())
+                    },
+                });
+            }
+        }
+
         // Only emit JSON when there's something non-default
         let has_content = ruleset.registry_cache.is_some()
             || !ruleset.registry_mirrors.is_empty()
             || !ruleset.env_translations.is_empty()
-            || ruleset.base_ide_container.is_some();
+            || ruleset.base_ide_container.is_some()
+            || ruleset.parent_devfile.is_some();
 
         if has_content {
             match serde_json::to_string_pretty(&ruleset) {
@@ -229,6 +269,14 @@ pub fn RuleEditor(runtime_rules_input: RwSignal<String>) -> impl IntoView {
                 ide_name.set(ide.name.clone());
                 ide_image.set(ide.image.clone());
                 ide_memory.set(ide.memory_limit.clone().unwrap_or_default());
+            }
+
+            if let Some(parent) = &ruleset.parent_devfile {
+                parent_enabled.set(true);
+                parent_id.set(parent.id.clone().unwrap_or_default());
+                parent_registry_url.set(parent.registry_url.clone().unwrap_or_default());
+                parent_uri.set(parent.uri.clone().unwrap_or_default());
+                parent_version.set(parent.version.clone().unwrap_or_default());
             }
         }
     }
@@ -543,6 +591,87 @@ pub fn RuleEditor(runtime_rules_input: RwSignal<String>) -> impl IntoView {
                                             prop:value=move || ide_memory.get()
                                             on:input=move |ev| {
                                                 ide_memory.set(event_target_value(&ev));
+                                                sync();
+                                            }
+                                        />
+                                    </div>
+                                </div>
+                            },
+                        )
+                    } else {
+                        None
+                    }
+                }}
+            </fieldset>
+
+            // --- Parent Devfile Section ---
+            <fieldset class="rule-section">
+                <legend>"Parent Devfile"</legend>
+                <p class="hint">"Use a parent devfile instead of an inline IDE container. When enabled, this takes precedence over the IDE container above."</p>
+                <label class="rule-checkbox">
+                    <input
+                        type="checkbox"
+                        prop:checked=move || parent_enabled.get()
+                        on:change=move |ev| {
+                            parent_enabled.set(event_target_checked(&ev));
+                            sync();
+                        }
+                    />
+                    " Use parent devfile"
+                </label>
+                {move || {
+                    if parent_enabled.get() {
+                        Some(
+                            view! {
+                                <div class="rule-fields">
+                                    <div class="rule-field">
+                                        <label class="rule-label">"Registry ID"</label>
+                                        <input
+                                            class="text rule-input"
+                                            type="text"
+                                            placeholder="e.g. udi"
+                                            prop:value=move || parent_id.get()
+                                            on:input=move |ev| {
+                                                parent_id.set(event_target_value(&ev));
+                                                sync();
+                                            }
+                                        />
+                                    </div>
+                                    <div class="rule-field">
+                                        <label class="rule-label">"Registry URL"</label>
+                                        <input
+                                            class="text rule-input"
+                                            type="text"
+                                            placeholder="e.g. https://registry.devfile.io"
+                                            prop:value=move || parent_registry_url.get()
+                                            on:input=move |ev| {
+                                                parent_registry_url.set(event_target_value(&ev));
+                                                sync();
+                                            }
+                                        />
+                                    </div>
+                                    <div class="rule-field">
+                                        <label class="rule-label">"URI (direct link)"</label>
+                                        <input
+                                            class="text rule-input"
+                                            type="text"
+                                            placeholder="e.g. https://raw.githubusercontent.com/.../devfile.yaml"
+                                            prop:value=move || parent_uri.get()
+                                            on:input=move |ev| {
+                                                parent_uri.set(event_target_value(&ev));
+                                                sync();
+                                            }
+                                        />
+                                    </div>
+                                    <div class="rule-field">
+                                        <label class="rule-label">"Version"</label>
+                                        <input
+                                            class="text rule-input"
+                                            type="text"
+                                            placeholder="e.g. 2.2.0"
+                                            prop:value=move || parent_version.get()
+                                            on:input=move |ev| {
+                                                parent_version.set(event_target_value(&ev));
                                                 sync();
                                             }
                                         />

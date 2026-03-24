@@ -151,6 +151,7 @@ mod tests {
             metadata: Metadata {
                 name: String::from("test"),
             },
+            parent: None,
             variables: BTreeMap::new(),
             components: vec![Component {
                 name: String::from("app"),
@@ -192,6 +193,7 @@ mod tests {
             metadata: Metadata {
                 name: String::from("test"),
             },
+            parent: None,
             variables: BTreeMap::new(),
             components: vec![
                 Component {
@@ -237,6 +239,7 @@ mod tests {
             metadata: Metadata {
                 name: String::from("test"),
             },
+            parent: None,
             variables: BTreeMap::new(),
             components: vec![Component {
                 name: String::from("app"),
@@ -284,6 +287,7 @@ mod tests {
             metadata: Metadata {
                 name: String::from("test"),
             },
+            parent: None,
             variables: BTreeMap::new(),
             components: vec![Component {
                 name: String::from("app"),

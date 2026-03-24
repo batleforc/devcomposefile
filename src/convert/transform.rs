@@ -6,7 +6,7 @@ use crate::convert::variables::extract_and_rewrite_variables;
 use crate::domain::compose::ComposeProject;
 use crate::domain::devfile::{
     Command, Component, ComponentSpec, ContainerComponent, Devfile, Endpoint, EnvVar, Events,
-    Metadata, VolumeComponent, VolumeMount,
+    Metadata, Parent, VolumeComponent, VolumeMount,
 };
 use crate::domain::rules::RuleSet;
 
@@ -126,47 +126,84 @@ pub fn convert_to_devfile(
 
     let ide_image = match ide_image_override {
         Some(raw) if !raw.trim().is_empty() => Some(raw),
-        _ => rules.base_ide_container.as_ref().map(|c| c.image.clone()),
+        _ => None,
     };
 
-    if let Some(image) = ide_image {
-        let ide_name = rules
-            .base_ide_container
-            .as_ref()
-            .map(|c| c.name.clone())
-            .unwrap_or_else(|| String::from("tool"));
-        let ide_name = resolve_component_name(&ide_name, &components);
-        let ide_memory_limit = rules
-            .base_ide_container
-            .as_ref()
-            .and_then(|c| c.memory_limit.clone());
-
-        rule_traces.push(RuleTrace {
-            service: ide_name.clone(),
-            description: format!("Tool container inserted with image {image}"),
-        });
-
-        // Insert tool container at the top of the components list
-        components.insert(
-            0,
-            Component {
-                name: ide_name,
-                spec: ComponentSpec::Container(ContainerComponent {
-                    image,
-                    env: Vec::new(),
-                    endpoints: Vec::new(),
-                    volume_mounts: Vec::new(),
-                    command: None,
-                    args: None,
-                    mount_sources: true,
-                    memory_limit: ide_memory_limit,
-                }),
-            },
-        );
+    // Decide between: (1) IDE image override, (2) parent devfile, (3) inline baseIdeContainer
+    let parent = if ide_image.is_some() {
+        // Explicit IDE image override always wins → inline container, no parent
+        None
+    } else if let Some(ref parent_rule) = rules.parent_devfile {
+        let has_content = parent_rule.id.is_some() || parent_rule.uri.is_some();
+        if has_content {
+            rule_traces.push(RuleTrace {
+                service: String::from("parent"),
+                description: format!(
+                    "Parent devfile reference: {}",
+                    parent_rule
+                        .id
+                        .as_deref()
+                        .or(parent_rule.uri.as_deref())
+                        .unwrap_or("(empty)")
+                ),
+            });
+            Some(Parent {
+                id: parent_rule.id.clone(),
+                registry_url: parent_rule.registry_url.clone(),
+                uri: parent_rule.uri.clone(),
+                version: parent_rule.version.clone(),
+            })
+        } else {
+            None
+        }
     } else {
-        diagnostics.push(String::from(
-            "No tool container configured. Provide one in the input or rules.",
-        ));
+        None
+    };
+
+    // Only insert inline IDE container when NOT using a parent devfile
+    if parent.is_none() {
+        let ide_image_resolved =
+            ide_image.or_else(|| rules.base_ide_container.as_ref().map(|c| c.image.clone()));
+
+        if let Some(image) = ide_image_resolved {
+            let ide_name = rules
+                .base_ide_container
+                .as_ref()
+                .map(|c| c.name.clone())
+                .unwrap_or_else(|| String::from("tool"));
+            let ide_name = resolve_component_name(&ide_name, &components);
+            let ide_memory_limit = rules
+                .base_ide_container
+                .as_ref()
+                .and_then(|c| c.memory_limit.clone());
+
+            rule_traces.push(RuleTrace {
+                service: ide_name.clone(),
+                description: format!("Tool container inserted with image {image}"),
+            });
+
+            // Insert tool container at the top of the components list
+            components.insert(
+                0,
+                Component {
+                    name: ide_name,
+                    spec: ComponentSpec::Container(ContainerComponent {
+                        image,
+                        env: Vec::new(),
+                        endpoints: Vec::new(),
+                        volume_mounts: Vec::new(),
+                        command: None,
+                        args: None,
+                        mount_sources: true,
+                        memory_limit: ide_memory_limit,
+                    }),
+                },
+            );
+        } else {
+            diagnostics.push(String::from(
+                "No tool container or parent devfile configured. Provide one in the input or rules.",
+            ));
+        }
     }
 
     diagnostics.extend(project.unsupported);
@@ -190,6 +227,7 @@ pub fn convert_to_devfile(
             metadata: Metadata {
                 name: metadata_name,
             },
+            parent,
             variables,
             components,
             commands,
