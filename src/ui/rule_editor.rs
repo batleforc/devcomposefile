@@ -177,6 +177,62 @@ pub fn RuleEditor(runtime_rules_input: RwSignal<String>) -> impl IntoView {
         sync();
     };
 
+    // Hydrate form from existing JSON on mount
+    {
+        let json = runtime_rules_input.get_untracked();
+        if let Ok(ruleset) = serde_json::from_str::<RuleSet>(&json) {
+            if let Some(cache) = &ruleset.registry_cache {
+                cache_enabled.set(true);
+                cache_prefix.set(cache.prefix.clone());
+                cache_mode.set(
+                    match cache.mode {
+                        RegistryCacheMode::Replace => "replace",
+                        RegistryCacheMode::Prepend => "prepend",
+                    }
+                    .to_string(),
+                );
+            }
+
+            let mut mid = mirror_next_id.get_untracked();
+            let mut m_rows = Vec::new();
+            for mirror in &ruleset.registry_mirrors {
+                m_rows.push(MirrorRow {
+                    id: mid,
+                    source: RwSignal::new(mirror.source.clone()),
+                    target: RwSignal::new(mirror.target.clone()),
+                });
+                mid += 1;
+            }
+            mirror_next_id.set(mid);
+            mirror_rows.set(m_rows);
+
+            let mut eid = next_id.get_untracked();
+            let mut e_rows = Vec::new();
+            for rule in &ruleset.env_translations {
+                let first_set = rule.set.iter().next();
+                e_rows.push(EnvRow {
+                    id: eid,
+                    service: RwSignal::new(rule.service.clone()),
+                    from: RwSignal::new(rule.from.clone().unwrap_or_default()),
+                    to: RwSignal::new(rule.to.clone().unwrap_or_default()),
+                    remove: RwSignal::new(rule.remove),
+                    set_key: RwSignal::new(first_set.map(|(k, _)| k.clone()).unwrap_or_default()),
+                    set_value: RwSignal::new(first_set.map(|(_, v)| v.clone()).unwrap_or_default()),
+                });
+                eid += 1;
+            }
+            next_id.set(eid);
+            env_rules.set(e_rows);
+
+            if let Some(ide) = &ruleset.base_ide_container {
+                ide_enabled.set(true);
+                ide_name.set(ide.name.clone());
+                ide_image.set(ide.image.clone());
+                ide_memory.set(ide.memory_limit.clone().unwrap_or_default());
+            }
+        }
+    }
+
     view! {
         <div class="rule-editor">
             // --- Registry Cache Section ---
