@@ -1,0 +1,13 @@
+{
+  "envTranslations": [
+    {
+      "service": "web",
+      "from": "KEEP_ME",
+      "to": "KEPT_VALUE",
+      "remove": true,
+      "set": {
+        "RUNTIME_FLAG": "applied"
+      }
+    }
+  ]
+}

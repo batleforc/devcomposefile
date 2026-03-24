@@ -15,6 +15,16 @@ pub struct RuleSet {
 #[serde(rename_all = "camelCase")]
 pub struct RegistryCacheRule {
     pub prefix: String,
+    #[serde(default)]
+    pub mode: RegistryCacheMode,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum RegistryCacheMode {
+    #[default]
+    Prepend,
+    Replace,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -40,7 +50,7 @@ pub struct IdeContainerRule {
 }
 
 fn default_ide_name() -> String {
-    String::from("ide")
+    String::from("tool")
 }
 
 fn default_service_match() -> String {
@@ -63,7 +73,9 @@ pub fn merge_rules(base: &RuleSet, extra: &RuleSet) -> RuleSet {
     }
 
     if !extra.env_translations.is_empty() {
-        merged.env_translations.extend(extra.env_translations.clone());
+        merged
+            .env_translations
+            .extend(extra.env_translations.clone());
     }
 
     if extra.base_ide_container.is_some() {

@@ -1,0 +1,24 @@
+name: sample-stack
+volumes:
+  cache: {}
+services:
+  web:
+    image: ghcr.io/example/web:1.0
+    environment:
+      HTTP_PROXY: https://proxy.internal
+      NODE_ENV: development
+      KEEP_ME: yes
+    command: ["npm", "run", "dev"]
+    working_dir: /workspace/web
+    ports:
+      - "3000:3000"
+    volumes:
+      - .:/workspace:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "https://localhost:3000/healthz"]
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    environment:
+      QUEUE: jobs

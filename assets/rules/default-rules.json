@@ -12,7 +12,7 @@
     }
   ],
   "baseIdeContainer": {
-    "name": "ide",
+    "name": "tool",
     "image": "quay.io/devfile/universal-developer-image:latest",
     "memoryLimit": "2Gi"
   }

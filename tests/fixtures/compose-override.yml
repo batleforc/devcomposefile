@@ -1,0 +1,9 @@
+services:
+  web:
+    image: ghcr.io/example/web:2.0
+    environment:
+      NODE_ENV: staging
+      EXTRA_FLAG: enabled
+    entrypoint: ["/bin/sh", "-lc"]
+    depends_on:
+      - worker

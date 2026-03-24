@@ -7,6 +7,7 @@ pub fn merge_projects(projects: Vec<ComposeProject>) -> ComposeProject {
         name: None,
         services: BTreeMap::new(),
         unsupported: Vec::new(),
+        includes: Vec::new(),
     };
 
     for project in projects {
@@ -32,6 +33,10 @@ pub fn merge_projects(projects: Vec<ComposeProject>) -> ComposeProject {
 fn merge_service(existing: &mut ComposeService, incoming: ComposeService) {
     if incoming.image.is_some() {
         existing.image = incoming.image;
+    }
+
+    if incoming.build.is_some() {
+        existing.build = incoming.build;
     }
 
     for (k, v) in incoming.environment {
@@ -96,11 +101,13 @@ mod tests {
             name: Some(String::from("a")),
             services: BTreeMap::from([(String::from("web"), first_service)]),
             unsupported: Vec::new(),
+            includes: Vec::new(),
         };
         let second = ComposeProject {
             name: Some(String::from("b")),
             services: BTreeMap::from([(String::from("web"), second_service)]),
             unsupported: Vec::new(),
+            includes: Vec::new(),
         };
 
         let merged = merge_projects(vec![first, second]);

@@ -1,0 +1,54 @@
+schemaVersion: 2.3.0
+metadata:
+  name: sample-stack
+components:
+  - name: tool
+    container:
+      image: quay.io/devfile/custom-udi:latest
+      mountSources: true
+      memoryLimit: 2Gi
+  - name: web
+    container:
+      image: registry-cache.local/ghcr.io/example/web:2.0
+      env:
+        - name: APP_ENV
+          value: staging
+        - name: DEVFILE_GENERATED
+          value: "true"
+        - name: EXTRA_FLAG
+          value: enabled
+        - name: HTTPS_PROXY
+          value: https://proxy.internal
+        - name: HTTP_PROXY
+          value: https://proxy.internal
+        - name: KEPT_VALUE
+          value: yes
+        - name: RUNTIME_FLAG
+          value: applied
+      endpoints:
+        - name: port-3000
+          targetPort: 3000
+          exposure: public
+      command:
+        - /bin/sh
+        - -lc
+      args:
+        - npm
+        - run
+        - dev
+      mountSources: true
+commands:
+  - id: run-web
+    exec:
+      component: web
+      commandLine: /bin/sh -lc npm run dev
+      workingDir: /workspace/web
+  - id: debug-web
+    exec:
+      component: web
+      commandLine: /bin/sh -lc npm run dev
+      workingDir: /workspace/web
+events:
+  postStart:
+    - run-web
+    - debug-web
