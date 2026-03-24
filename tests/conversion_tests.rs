@@ -147,8 +147,8 @@ services:
         .find(|c| c.name == "db")
         .expect("db");
     if let ComponentSpec::Container(ref c) = db.spec {
-        // Simple image (no slash-separated registry) gets prepended with cache prefix
-        assert_eq!(c.image, "cache.corp/postgres:15");
+        // Bare image (no namespace) gets library/ prefix in Replace mode
+        assert_eq!(c.image, "cache.corp/library/postgres:15");
         // Container-only port (no host) → internal exposure
         assert_eq!(c.endpoints[0].exposure.as_deref(), Some("internal"));
     } else {
@@ -805,4 +805,66 @@ services:
             .iter()
             .any(|t| t.description.contains("localhost"))
     );
+}
+
+#[test]
+fn duplicate_endpoint_ports_get_host_prefix() {
+    let yaml = r#"
+services:
+  frontend:
+    image: nginx:latest
+    ports:
+      - "8080:3000"
+  backend:
+    image: node:20
+    ports:
+      - "9090:3000"
+  db:
+    image: postgres:16
+    ports:
+      - "5432:5432"
+"#;
+    let projects = parse_compose_documents(yaml).expect("parses");
+    let merged = merge_projects(projects);
+    let result = convert_to_devfile(merged, RuleSet::default(), None);
+
+    let frontend = result
+        .devfile
+        .components
+        .iter()
+        .find(|c| c.name == "frontend")
+        .unwrap();
+    let backend = result
+        .devfile
+        .components
+        .iter()
+        .find(|c| c.name == "backend")
+        .unwrap();
+    let db = result
+        .devfile
+        .components
+        .iter()
+        .find(|c| c.name == "db")
+        .unwrap();
+
+    // Duplicate container port 3000 → prefixed with host port
+    if let ComponentSpec::Container(ref ctr) = frontend.spec {
+        assert_eq!(ctr.endpoints[0].name, "port-8080-3000");
+        assert_eq!(ctr.endpoints[0].target_port, 3000);
+    } else {
+        panic!("expected container");
+    }
+    if let ComponentSpec::Container(ref ctr) = backend.spec {
+        assert_eq!(ctr.endpoints[0].name, "port-9090-3000");
+        assert_eq!(ctr.endpoints[0].target_port, 3000);
+    } else {
+        panic!("expected container");
+    }
+    // Unique port 5432 → no prefix
+    if let ComponentSpec::Container(ref ctr) = db.spec {
+        assert_eq!(ctr.endpoints[0].name, "port-5432");
+        assert_eq!(ctr.endpoints[0].target_port, 5432);
+    } else {
+        panic!("expected container");
+    }
 }

@@ -15,16 +15,30 @@ pub fn apply_rules(
 ) -> Vec<RuleTrace> {
     let mut traces = Vec::new();
 
-    if let Some(cache) = &rules.registry_cache {
-        if let Some(image) = &service.image {
-            let rewritten = rewrite_image(image, &cache.prefix, &cache.mode);
-            if *image != rewritten {
-                traces.push(RuleTrace {
-                    service: service_name.to_string(),
-                    description: format!("Image rewritten: {image} → {rewritten}"),
-                });
-                service.image = Some(rewritten);
-            }
+    if let Some(image) = &service.image {
+        let (source_registry, _) = parse_image_parts(image);
+
+        // Check for a specific registry mirror rule first
+        let matched_mirror = rules
+            .registry_mirrors
+            .iter()
+            .find(|m| m.source == source_registry);
+
+        let rewritten = if let Some(mirror) = matched_mirror {
+            // Mirror rules always use Replace semantics
+            rewrite_image(image, &mirror.target, &RegistryCacheMode::Replace)
+        } else if let Some(cache) = &rules.registry_cache {
+            rewrite_image(image, &cache.prefix, &cache.mode)
+        } else {
+            image.clone()
+        };
+
+        if *image != rewritten {
+            traces.push(RuleTrace {
+                service: service_name.to_string(),
+                description: format!("Image rewritten: {image} → {rewritten}"),
+            });
+            service.image = Some(rewritten);
         }
     }
 
@@ -42,6 +56,32 @@ pub fn apply_rules(
     traces
 }
 
+/// Check whether the first segment of an image reference looks like a
+/// registry domain (contains `.` or `:`, or is `localhost`).
+fn is_registry_domain(segment: &str) -> bool {
+    segment.contains('.') || segment.contains(':') || segment == "localhost"
+}
+
+/// Parse an image reference into (source_registry, path).
+///
+/// - `nginx:latest` → `("docker.io", "library/nginx:latest")`
+/// - `myorg/myrepo:tag` → `("docker.io", "myorg/myrepo:tag")`
+/// - `ghcr.io/org/repo:v1` → `("ghcr.io", "org/repo:v1")`
+/// - `localhost:5000/app:1` → `("localhost:5000", "app:1")`
+fn parse_image_parts(image: &str) -> (String, String) {
+    match image.split_once('/') {
+        Some((first, rest)) if is_registry_domain(first) => (first.to_string(), rest.to_string()),
+        Some(_) => {
+            // org/repo:tag — Docker Hub without explicit registry
+            ("docker.io".to_string(), image.to_string())
+        }
+        None => {
+            // bare image like nginx:latest — Docker Hub library
+            ("docker.io".to_string(), format!("library/{image}"))
+        }
+    }
+}
+
 fn rewrite_image(image: &str, prefix: &str, mode: &RegistryCacheMode) -> String {
     let normalized = if prefix.ends_with('/') {
         prefix.to_string()
@@ -52,24 +92,19 @@ fn rewrite_image(image: &str, prefix: &str, mode: &RegistryCacheMode) -> String 
     match mode {
         RegistryCacheMode::Prepend => {
             if image.starts_with(&normalized) {
-                image.to_string()
-            } else {
-                format!("{normalized}{image}")
+                return image.to_string();
             }
+            // Normalize bare images to include library/ prefix
+            let effective = if !image.contains('/') {
+                format!("library/{image}")
+            } else {
+                image.to_string()
+            };
+            format!("{normalized}{effective}")
         }
         RegistryCacheMode::Replace => {
-            // Replace everything before the first '/' with the cache prefix
-            match image.split_once('/') {
-                Some((_, rest)) if rest.contains('/') => {
-                    // image like registry.io/org/repo:tag → prefix/org/repo:tag
-                    let after_registry = &image[image.find('/').unwrap() + 1..];
-                    format!("{normalized}{after_registry}")
-                }
-                _ => {
-                    // Simple image like nginx:latest or org/repo:tag → prefix/image
-                    format!("{normalized}{image}")
-                }
-            }
+            let (_, path) = parse_image_parts(image);
+            format!("{normalized}{path}")
         }
     }
 }
@@ -153,7 +188,7 @@ mod tests {
     use crate::domain::compose::ComposeService;
     use crate::domain::rules::{EnvTranslationRule, RegistryCacheMode, RegistryCacheRule, RuleSet};
 
-    use super::{apply_rules, service_matches};
+    use super::{apply_rules, parse_image_parts, rewrite_image, service_matches};
 
     #[test]
     fn rewrites_image_and_env() {
@@ -176,11 +211,16 @@ mod tests {
                 set: BTreeMap::new(),
             }],
             base_ide_container: None,
+            ..Default::default()
         };
 
         let traces = apply_rules("web", &mut service, &rules);
 
-        assert_eq!(service.image.as_deref(), Some("cache.local/nginx:latest"));
+        // Bare image gets library/ prefix
+        assert_eq!(
+            service.image.as_deref(),
+            Some("cache.local/library/nginx:latest")
+        );
         assert!(service.environment.get("A").is_none());
         assert_eq!(service.environment.get("B").map(String::as_str), Some("1"));
         assert!(traces.len() >= 2);
@@ -217,5 +257,154 @@ mod tests {
         assert!(!service_matches("my-cache", "*db*"));
         assert!(service_matches("exact", "exact"));
         assert!(!service_matches("exact", "other"));
+    }
+
+    #[test]
+    fn parse_image_parts_bare_image() {
+        let (reg, path) = parse_image_parts("nginx:latest");
+        assert_eq!(reg, "docker.io");
+        assert_eq!(path, "library/nginx:latest");
+    }
+
+    #[test]
+    fn parse_image_parts_org_image() {
+        let (reg, path) = parse_image_parts("myorg/myrepo:tag");
+        assert_eq!(reg, "docker.io");
+        assert_eq!(path, "myorg/myrepo:tag");
+    }
+
+    #[test]
+    fn parse_image_parts_full_image() {
+        let (reg, path) = parse_image_parts("ghcr.io/org/repo:v1");
+        assert_eq!(reg, "ghcr.io");
+        assert_eq!(path, "org/repo:v1");
+    }
+
+    #[test]
+    fn parse_image_parts_quay() {
+        let (reg, path) = parse_image_parts("quay.io/devfile/udi:latest");
+        assert_eq!(reg, "quay.io");
+        assert_eq!(path, "devfile/udi:latest");
+    }
+
+    #[test]
+    fn parse_image_parts_localhost_registry() {
+        let (reg, path) = parse_image_parts("localhost:5000/app:1");
+        assert_eq!(reg, "localhost:5000");
+        assert_eq!(path, "app:1");
+    }
+
+    #[test]
+    fn prepend_mode_bare_image_includes_library() {
+        let result = rewrite_image("postgres:15", "cache.local", &RegistryCacheMode::Prepend);
+        assert_eq!(result, "cache.local/library/postgres:15");
+    }
+
+    #[test]
+    fn prepend_mode_org_image_no_library() {
+        let result = rewrite_image(
+            "bitnami/redis:7",
+            "cache.local",
+            &RegistryCacheMode::Prepend,
+        );
+        assert_eq!(result, "cache.local/bitnami/redis:7");
+    }
+
+    #[test]
+    fn replace_mode_bare_image_includes_library() {
+        let result = rewrite_image("postgres:15", "cache.local", &RegistryCacheMode::Replace);
+        assert_eq!(result, "cache.local/library/postgres:15");
+    }
+
+    #[test]
+    fn replace_mode_org_image() {
+        let result = rewrite_image(
+            "bitnami/redis:7",
+            "cache.local",
+            &RegistryCacheMode::Replace,
+        );
+        assert_eq!(result, "cache.local/bitnami/redis:7");
+    }
+
+    #[test]
+    fn mirror_rule_overrides_generic_cache() {
+        use crate::domain::rules::RegistryMirrorRule;
+
+        let mut service = ComposeService {
+            image: Some(String::from("ghcr.io/org/repo:v1")),
+            ..Default::default()
+        };
+
+        let rules = RuleSet {
+            registry_cache: Some(RegistryCacheRule {
+                prefix: String::from("generic-cache.local"),
+                mode: RegistryCacheMode::Prepend,
+            }),
+            registry_mirrors: vec![RegistryMirrorRule {
+                source: String::from("ghcr.io"),
+                target: String::from("ghcr-cache.local"),
+            }],
+            ..Default::default()
+        };
+
+        apply_rules("svc", &mut service, &rules);
+        // Mirror takes precedence over generic cache
+        assert_eq!(
+            service.image.as_deref(),
+            Some("ghcr-cache.local/org/repo:v1")
+        );
+    }
+
+    #[test]
+    fn mirror_rule_docker_hub_bare_image() {
+        use crate::domain::rules::RegistryMirrorRule;
+
+        let mut service = ComposeService {
+            image: Some(String::from("nginx:latest")),
+            ..Default::default()
+        };
+
+        let rules = RuleSet {
+            registry_mirrors: vec![RegistryMirrorRule {
+                source: String::from("docker.io"),
+                target: String::from("dockerhub-cache.local"),
+            }],
+            ..Default::default()
+        };
+
+        apply_rules("svc", &mut service, &rules);
+        assert_eq!(
+            service.image.as_deref(),
+            Some("dockerhub-cache.local/library/nginx:latest")
+        );
+    }
+
+    #[test]
+    fn unmatched_registry_falls_back_to_generic_cache() {
+        use crate::domain::rules::RegistryMirrorRule;
+
+        let mut service = ComposeService {
+            image: Some(String::from("quay.io/devfile/udi:latest")),
+            ..Default::default()
+        };
+
+        let rules = RuleSet {
+            registry_cache: Some(RegistryCacheRule {
+                prefix: String::from("generic-cache.local"),
+                mode: RegistryCacheMode::Prepend,
+            }),
+            registry_mirrors: vec![RegistryMirrorRule {
+                source: String::from("ghcr.io"),
+                target: String::from("ghcr-cache.local"),
+            }],
+            ..Default::default()
+        };
+
+        apply_rules("svc", &mut service, &rules);
+        // No mirror for quay.io → falls back to generic cache (prepend)
+        assert_eq!(
+            service.image.as_deref(),
+            Some("generic-cache.local/quay.io/devfile/udi:latest")
+        );
     }
 }

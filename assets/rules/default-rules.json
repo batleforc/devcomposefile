@@ -2,6 +2,16 @@
   "registryCache": {
     "prefix": "registry-cache.local"
   },
+  "registryMirrors": [
+    {
+      "source": "ghcr.io",
+      "target": "ghcr-cache.local"
+    },
+    {
+      "source": "quay.io",
+      "target": "quay-cache.local"
+    }
+  ],
   "envTranslations": [
     {
       "service": "*",

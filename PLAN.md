@@ -76,11 +76,42 @@ Build a pure frontend Rust + Leptos (WASM) app that converts one or more Docker 
 38. Add `variables: BTreeMap<String, String>` field to the `Devfile` struct, serialized between `metadata` and `components`, and skipped when empty.
 39. New `src/convert/variables.rs` module with `extract_and_rewrite_variables()` function called in the transform pipeline after rule application but before component building.
 
-### Phase 12 — Pre-fill Git repo from URL query parameters *(depends on Phase 10)*
+### Phase 12 — Pre-fill Git repo from URL query parameters ✅ *(depends on Phase 10)*
 
 40. Read `?repo=`, `?ref=`, and `?path=` query parameters from the page URL on component mount using `web_sys::Url` / `UrlSearchParams`.
 41. Pre-fill the Git repository URL, branch/tag, and file path input fields with the query parameter values.
 42. When `?repo=` is present, automatically trigger the fetch on mount so the user sees the Compose file immediately.
+
+### Phase 13 — Inter-service hostname replacement ✅ *(depends on Phase 11)*
+
+43. Scan environment values, command args, and entrypoint args for references to other Compose service names used as hostnames (e.g. `db:5432`, `redis://cache:6379`, `user:pass@mongo:27017/mydb`).
+44. Detect hostname patterns: preceded by `://` (scheme), preceded by `@` (credentials), followed by `:` + digit (host:port), or followed by `/` after a prior `://` (URL path).
+45. Replace matched service names with `localhost`; skip self-references so a service's own name is preserved.
+46. New `src/convert/service_refs.rs` module with `rewrite_service_references()` called in the transform pipeline after variable extraction, producing `RuleTrace` entries for each replacement.
+
+### Phase 14 — Duplicate endpoint port disambiguation ✅ *(depends on Phase 4)*
+
+47. Pre-scan all services for container ports that appear in more than one service.
+48. When a container port is duplicated across services, prefix the Devfile endpoint name with the host port (`port-{host}-{container}`) or the service name (`{service}-port-{container}`) when no host port is mapped.
+49. Unique ports keep the default `port-{container}` naming; no change to existing single-service behavior.
+
+### Phase 15 — Visual rule editor ✅ *(depends on Phase 5)*
+
+50. Create a `RuleEditor` component (`src/ui/rule_editor.rs`) that lets users build a `RuleSet` via form controls instead of writing raw JSON.
+51. Provide form sections for Registry Cache (enable/prefix/mode), Environment Translations (dynamic add/remove rows with service, from, to, remove, set fields), and IDE/Tool Container (name/image/memory limit).
+52. Sync form state to the `runtime_rules_input` signal as pretty-printed JSON so the conversion pipeline picks it up transparently.
+53. Add a toggle button in the Rules panel to switch between the visual editor and the raw JSON textarea.
+
+### Phase 16 — Registry cache: library namespace & per-registry mirrors ✅ *(depends on Phases 5, 15)*
+
+54. Fix `rewrite_image()` so bare Docker Hub images (no `/`) like `nginx:latest` are normalised to include `library/` — i.e. `cache/library/nginx:latest` in both Prepend and Replace modes.
+55. Add `parse_image_parts()` helper that splits an image reference into `(source_registry, path)`, recognising `docker.io`, `ghcr.io`, `quay.io`, `localhost:PORT`, and any domain containing `.` or `:`.
+56. Introduce `RegistryMirrorRule { source, target }` domain type in `rules.rs` and new `registry_mirrors: Vec<RegistryMirrorRule>` field on `RuleSet`. Mirrors override the generic `registryCache` for images matching a specific source registry.
+57. Update `apply_rules()` to check mirror rules first (specific match by source registry) before falling back to the generic registry cache rule.
+58. Update `merge_rules()` to propagate `registry_mirrors` (extra replaces base when non-empty).
+59. Add a "Registry Mirrors" section to the visual rule editor with dynamic add/remove rows (source + target fields).
+60. Update `default-rules.json` with example mirrors for `ghcr.io` and `quay.io`.
+61. Add 11 new unit tests (parse_image_parts variants, Prepend/Replace library namespace, mirror override, Docker Hub mirror, fallback to generic cache) and update integration test fixture.
 
 ## Relevant Files
 
@@ -100,10 +131,13 @@ Build a pure frontend Rust + Leptos (WASM) app that converts one or more Docker 
 | `src/convert/rule_engine.rs` | Image/env/base-container rewrite logic |
 | `src/convert/validate.rs` | Output structural checks and diagnostics |
 | `src/convert/variables.rs` | Compose `${VAR}` extraction and Devfile `{{VAR}}` rewriting |
+| `src/convert/service_refs.rs` | Inter-service hostname detection and localhost replacement |
 | `src/ui/output.rs` | YAML preview and export actions |
 | `src/ui/diagnostics.rs` | Surfaced parse/merge/rule/validation messages |
 | `src/ui/git_repo_input.rs` | Git repository URL input and fetch UI |
 | `src/ui/include_files.rs` | Include file upload panel for auxiliary Compose files |
+| `src/ui/rules_panel.rs` | Rules & IDE override display with visual/JSON toggle |
+| `src/ui/rule_editor.rs` | Visual form-based rule editor for building RuleSets |
 | `assets/rules/default-rules.json` | Bundled default special rules loaded on startup |
 | `assets/rules/startup-rules.json` | Startup-provided rules fetched at runtime via HTTP |
 | `tests/fixtures/*.yml` | Compose merge/conversion fixtures |

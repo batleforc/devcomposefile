@@ -7,6 +7,8 @@ use serde::{Deserialize, Serialize};
 pub struct RuleSet {
     pub registry_cache: Option<RegistryCacheRule>,
     #[serde(default)]
+    pub registry_mirrors: Vec<RegistryMirrorRule>,
+    #[serde(default)]
     pub env_translations: Vec<EnvTranslationRule>,
     pub base_ide_container: Option<IdeContainerRule>,
 }
@@ -25,6 +27,17 @@ pub enum RegistryCacheMode {
     #[default]
     Prepend,
     Replace,
+}
+
+/// Per-registry mirror: images from `source` registry are rewritten
+/// to use `target` instead (always Replace mode semantics).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RegistryMirrorRule {
+    /// Source registry domain, e.g. `"ghcr.io"`, `"quay.io"`, `"docker.io"`.
+    pub source: String,
+    /// Target registry/prefix that replaces the source, e.g. `"ghcr-cache.local"`.
+    pub target: String,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -70,6 +83,10 @@ pub fn merge_rules(base: &RuleSet, extra: &RuleSet) -> RuleSet {
 
     if extra.registry_cache.is_some() {
         merged.registry_cache = extra.registry_cache.clone();
+    }
+
+    if !extra.registry_mirrors.is_empty() {
+        merged.registry_mirrors = extra.registry_mirrors.clone();
     }
 
     if !extra.env_translations.is_empty() {

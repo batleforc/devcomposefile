@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap as StdBTreeMap, BTreeSet};
 
 use crate::convert::rule_engine::{RuleTrace, apply_rules};
 use crate::convert::service_refs::rewrite_service_references;
@@ -39,6 +39,9 @@ pub fn convert_to_devfile(
     let ref_traces = rewrite_service_references(&mut project);
     rule_traces.extend(ref_traces);
 
+    // Pre-scan for container ports used by multiple services
+    let duplicate_ports = collect_duplicate_ports(&project);
+
     for (service_name, service) in &project.services {
         let Some(image) = service.image.clone() else {
             if service.build.is_some() {
@@ -73,8 +76,13 @@ pub fn convert_to_devfile(
             Some(service.command.clone())
         };
 
-        let endpoints =
-            map_ports_to_endpoints(&service.ports, &mut diagnostics, service_name, true);
+        let endpoints = map_ports_to_endpoints(
+            &service.ports,
+            &mut diagnostics,
+            service_name,
+            true,
+            &duplicate_ports,
+        );
         let volume_mounts =
             map_volumes_to_mounts(&service.volumes, &mut named_volumes, service_name);
 
@@ -209,11 +217,33 @@ pub fn convert_to_devfile(
     }
 }
 
+/// Collect container ports that appear in more than one service.
+fn collect_duplicate_ports(project: &ComposeProject) -> BTreeSet<u16> {
+    let mut port_owners: StdBTreeMap<u16, usize> = StdBTreeMap::new();
+    for service in project.services.values() {
+        // Use a set so a service exposing the same port twice only counts once.
+        let unique: BTreeSet<u16> = service
+            .ports
+            .iter()
+            .filter_map(|p| p.container.split('-').next().and_then(|s| s.parse().ok()))
+            .collect();
+        for port in unique {
+            *port_owners.entry(port).or_insert(0) += 1;
+        }
+    }
+    port_owners
+        .into_iter()
+        .filter(|(_, count)| *count > 1)
+        .map(|(port, _)| port)
+        .collect()
+}
+
 fn map_ports_to_endpoints(
     ports: &[crate::domain::compose::ComposePort],
     diagnostics: &mut Vec<String>,
     service_name: &str,
     infer_exposure: bool,
+    duplicate_ports: &BTreeSet<u16>,
 ) -> Vec<Endpoint> {
     let mut endpoints = Vec::new();
 
@@ -237,8 +267,19 @@ fn map_ports_to_endpoints(
                 } else {
                     None
                 };
+
+                let name = if duplicate_ports.contains(&target_port) {
+                    if let Some(host) = &port.host {
+                        format!("port-{host}-{target_port}")
+                    } else {
+                        format!("{service_name}-port-{target_port}")
+                    }
+                } else {
+                    format!("port-{target_port}")
+                };
+
                 endpoints.push(Endpoint {
-                    name: format!("port-{target_port}"),
+                    name,
                     target_port,
                     exposure,
                     protocol: port.protocol.clone(),
@@ -455,5 +496,180 @@ mod tests {
                 .iter()
                 .any(|c| c.name == "app-vol-1" && matches!(c.spec, ComponentSpec::Volume(_)))
         );
+    }
+
+    #[test]
+    fn duplicate_ports_across_services_get_prefixed() {
+        let project = ComposeProject {
+            name: Some(String::from("dup-ports")),
+            services: BTreeMap::from([
+                (
+                    String::from("frontend"),
+                    ComposeService {
+                        image: Some(String::from("nginx:latest")),
+                        ports: vec![ComposePort {
+                            host: Some(String::from("8080")),
+                            container: String::from("3000"),
+                            protocol: None,
+                        }],
+                        ..Default::default()
+                    },
+                ),
+                (
+                    String::from("backend"),
+                    ComposeService {
+                        image: Some(String::from("node:20")),
+                        ports: vec![ComposePort {
+                            host: Some(String::from("9090")),
+                            container: String::from("3000"),
+                            protocol: None,
+                        }],
+                        ..Default::default()
+                    },
+                ),
+            ]),
+            unsupported: Vec::new(),
+            includes: Vec::new(),
+        };
+
+        let result = convert_to_devfile(project, RuleSet::default(), None);
+
+        let backend = result
+            .devfile
+            .components
+            .iter()
+            .find(|c| c.name == "backend")
+            .unwrap();
+        let frontend = result
+            .devfile
+            .components
+            .iter()
+            .find(|c| c.name == "frontend")
+            .unwrap();
+
+        if let ComponentSpec::Container(ref ctr) = frontend.spec {
+            assert_eq!(ctr.endpoints[0].name, "port-8080-3000");
+            assert_eq!(ctr.endpoints[0].target_port, 3000);
+        } else {
+            panic!("expected container");
+        }
+
+        if let ComponentSpec::Container(ref ctr) = backend.spec {
+            assert_eq!(ctr.endpoints[0].name, "port-9090-3000");
+            assert_eq!(ctr.endpoints[0].target_port, 3000);
+        } else {
+            panic!("expected container");
+        }
+    }
+
+    #[test]
+    fn duplicate_port_without_host_uses_service_name_prefix() {
+        let project = ComposeProject {
+            name: Some(String::from("dup-no-host")),
+            services: BTreeMap::from([
+                (
+                    String::from("api"),
+                    ComposeService {
+                        image: Some(String::from("api:latest")),
+                        ports: vec![ComposePort {
+                            host: None,
+                            container: String::from("8080"),
+                            protocol: None,
+                        }],
+                        ..Default::default()
+                    },
+                ),
+                (
+                    String::from("worker"),
+                    ComposeService {
+                        image: Some(String::from("worker:latest")),
+                        ports: vec![ComposePort {
+                            host: None,
+                            container: String::from("8080"),
+                            protocol: None,
+                        }],
+                        ..Default::default()
+                    },
+                ),
+            ]),
+            unsupported: Vec::new(),
+            includes: Vec::new(),
+        };
+
+        let result = convert_to_devfile(project, RuleSet::default(), None);
+
+        let api = result
+            .devfile
+            .components
+            .iter()
+            .find(|c| c.name == "api")
+            .unwrap();
+        let worker = result
+            .devfile
+            .components
+            .iter()
+            .find(|c| c.name == "worker")
+            .unwrap();
+
+        if let ComponentSpec::Container(ref ctr) = api.spec {
+            assert_eq!(ctr.endpoints[0].name, "api-port-8080");
+        } else {
+            panic!("expected container");
+        }
+
+        if let ComponentSpec::Container(ref ctr) = worker.spec {
+            assert_eq!(ctr.endpoints[0].name, "worker-port-8080");
+        } else {
+            panic!("expected container");
+        }
+    }
+
+    #[test]
+    fn unique_ports_not_prefixed() {
+        let project = ComposeProject {
+            name: Some(String::from("unique-ports")),
+            services: BTreeMap::from([
+                (
+                    String::from("web"),
+                    ComposeService {
+                        image: Some(String::from("nginx:latest")),
+                        ports: vec![ComposePort {
+                            host: Some(String::from("8080")),
+                            container: String::from("80"),
+                            protocol: None,
+                        }],
+                        ..Default::default()
+                    },
+                ),
+                (
+                    String::from("db"),
+                    ComposeService {
+                        image: Some(String::from("postgres:16")),
+                        ports: vec![ComposePort {
+                            host: Some(String::from("5432")),
+                            container: String::from("5432"),
+                            protocol: None,
+                        }],
+                        ..Default::default()
+                    },
+                ),
+            ]),
+            unsupported: Vec::new(),
+            includes: Vec::new(),
+        };
+
+        let result = convert_to_devfile(project, RuleSet::default(), None);
+
+        let web = result
+            .devfile
+            .components
+            .iter()
+            .find(|c| c.name == "web")
+            .unwrap();
+        if let ComponentSpec::Container(ref ctr) = web.spec {
+            assert_eq!(ctr.endpoints[0].name, "port-80");
+        } else {
+            panic!("expected container");
+        }
     }
 }
