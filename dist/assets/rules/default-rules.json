@@ -1,0 +1,19 @@
+{
+  "registryCache": {
+    "prefix": "registry-cache.local"
+  },
+  "envTranslations": [
+    {
+      "service": "*",
+      "from": "HTTP_PROXY",
+      "to": "HTTPS_PROXY",
+      "remove": false,
+      "set": {}
+    }
+  ],
+  "baseIdeContainer": {
+    "name": "ide",
+    "image": "quay.io/devfile/universal-developer-image:latest",
+    "memoryLimit": "2Gi"
+  }
+}

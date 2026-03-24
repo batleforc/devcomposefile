@@ -1,0 +1,13 @@
+{
+  "envTranslations": [
+    {
+      "service": "web",
+      "from": "NODE_ENV",
+      "to": "APP_ENV",
+      "remove": true,
+      "set": {
+        "DEVFILE_GENERATED": "true"
+      }
+    }
+  ]
+}

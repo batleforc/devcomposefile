@@ -1,0 +1,5 @@
+[tools]
+rust = { version = "latest", profile = "default", components = "rust-src,llvm-tools", targets = "wasm32-unknown-unknown" }
+cocogitto = "latest"
+gitleaks = "latest"
+task = "latest"
