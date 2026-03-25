@@ -107,11 +107,7 @@ fn replace_service_hostnames(
                 break;
             }
 
-            result = format!(
-                "{}localhost{}",
-                &result[..pos],
-                &result[pos + name.len()..]
-            );
+            result = format!("{}localhost{}", &result[..pos], &result[pos + name.len()..]);
         }
     }
 
@@ -188,6 +184,7 @@ mod tests {
             entrypoint: Vec::new(),
             working_dir: None,
             depends_on: Vec::new(),
+            post_start: Vec::new(),
         }
     }
 
@@ -206,13 +203,12 @@ mod tests {
     #[test]
     fn replaces_host_port_in_env() {
         let mut svc = empty_service();
-        svc.environment
-            .insert("DATABASE_URL".into(), "postgres://user:pass@db:5432/mydb".into());
+        svc.environment.insert(
+            "DATABASE_URL".into(),
+            "postgres://user:pass@db:5432/mydb".into(),
+        );
 
-        let mut project = project_with(vec![
-            ("web", svc),
-            ("db", empty_service()),
-        ]);
+        let mut project = project_with(vec![("web", svc), ("db", empty_service())]);
 
         let traces = rewrite_service_references(&mut project);
 
@@ -230,10 +226,7 @@ mod tests {
         svc.environment
             .insert("REDIS_URL".into(), "redis://cache:6379".into());
 
-        let mut project = project_with(vec![
-            ("app", svc),
-            ("cache", empty_service()),
-        ]);
+        let mut project = project_with(vec![("app", svc), ("cache", empty_service())]);
 
         let traces = rewrite_service_references(&mut project);
 
@@ -250,10 +243,7 @@ mod tests {
         svc.environment
             .insert("MONGO_HOST".into(), "mongo:27017".into());
 
-        let mut project = project_with(vec![
-            ("api", svc),
-            ("mongo", empty_service()),
-        ]);
+        let mut project = project_with(vec![("api", svc), ("mongo", empty_service())]);
 
         let traces = rewrite_service_references(&mut project);
 
@@ -269,10 +259,7 @@ mod tests {
         let mut svc = empty_service();
         svc.command = vec!["--host".into(), "db:5432".into()];
 
-        let mut project = project_with(vec![
-            ("worker", svc),
-            ("db", empty_service()),
-        ]);
+        let mut project = project_with(vec![("worker", svc), ("db", empty_service())]);
 
         let traces = rewrite_service_references(&mut project);
 
@@ -286,10 +273,7 @@ mod tests {
         let mut svc = empty_service();
         svc.entrypoint = vec!["wait-for-it".into(), "db:5432".into(), "--".into()];
 
-        let mut project = project_with(vec![
-            ("app", svc),
-            ("db", empty_service()),
-        ]);
+        let mut project = project_with(vec![("app", svc), ("db", empty_service())]);
 
         let traces = rewrite_service_references(&mut project);
 
@@ -303,10 +287,7 @@ mod tests {
         svc.environment
             .insert("SELF".into(), "http://web:8080".into());
 
-        let mut project = project_with(vec![
-            ("web", svc),
-            ("db", empty_service()),
-        ]);
+        let mut project = project_with(vec![("web", svc), ("db", empty_service())]);
 
         let traces = rewrite_service_references(&mut project);
 
@@ -324,10 +305,7 @@ mod tests {
         svc.environment
             .insert("PATH".into(), "/usr/local/db/bin".into());
 
-        let mut project = project_with(vec![
-            ("app", svc),
-            ("db", empty_service()),
-        ]);
+        let mut project = project_with(vec![("app", svc), ("db", empty_service())]);
 
         let traces = rewrite_service_references(&mut project);
 
@@ -345,10 +323,7 @@ mod tests {
         svc.environment
             .insert("API_URL".into(), "http://backend:3000/api/v1".into());
 
-        let mut project = project_with(vec![
-            ("frontend", svc),
-            ("backend", empty_service()),
-        ]);
+        let mut project = project_with(vec![("frontend", svc), ("backend", empty_service())]);
 
         let traces = rewrite_service_references(&mut project);
 
@@ -363,10 +338,7 @@ mod tests {
     fn handles_multiple_services_in_one_value() {
         let mut svc = empty_service();
         svc.environment
-            .insert(
-                "CONNECT".into(),
-                "redis://cache:6379,http://db:5432".into(),
-            );
+            .insert("CONNECT".into(), "redis://cache:6379,http://db:5432".into());
 
         let mut project = project_with(vec![
             ("app", svc),
@@ -405,15 +377,9 @@ mod tests {
     fn replaces_at_sign_prefix() {
         let mut svc = empty_service();
         svc.environment
-            .insert(
-                "AMQP".into(),
-                "amqp://guest:guest@rabbit:5672/%2F".into(),
-            );
+            .insert("AMQP".into(), "amqp://guest:guest@rabbit:5672/%2F".into());
 
-        let mut project = project_with(vec![
-            ("worker", svc),
-            ("rabbit", empty_service()),
-        ]);
+        let mut project = project_with(vec![("worker", svc), ("rabbit", empty_service())]);
 
         let traces = rewrite_service_references(&mut project);
 

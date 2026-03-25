@@ -66,6 +66,10 @@ fn merge_service(existing: &mut ComposeService, incoming: ComposeService) {
     if !incoming.depends_on.is_empty() {
         existing.depends_on = incoming.depends_on;
     }
+
+    if !incoming.post_start.is_empty() {
+        existing.post_start = incoming.post_start;
+    }
 }
 
 #[cfg(test)]

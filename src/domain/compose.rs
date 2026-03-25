@@ -36,6 +36,7 @@ pub struct ComposeService {
     pub entrypoint: Vec<String>,
     pub working_dir: Option<String>,
     pub depends_on: Vec<String>,
+    pub post_start: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -77,6 +78,7 @@ struct ServiceRaw {
     entrypoint: Option<Value>,
     working_dir: Option<String>,
     depends_on: Option<Value>,
+    post_start: Option<Value>,
 }
 
 pub fn parse_compose_documents(input: &str) -> Result<Vec<ComposeProject>, String> {
@@ -119,6 +121,7 @@ fn normalize(raw: ComposeRaw, raw_value: &Value, document_index: usize) -> Compo
             entrypoint: parse_command_like(svc_raw.entrypoint),
             working_dir: svc_raw.working_dir,
             depends_on: parse_depends_on(svc_raw.depends_on),
+            post_start: parse_command_like(svc_raw.post_start),
         };
 
         project.unsupported.extend(collect_service_unsupported(
@@ -395,6 +398,7 @@ fn collect_service_unsupported(
         "entrypoint",
         "working_dir",
         "depends_on",
+        "post_start",
     ];
 
     for key in service.keys().filter_map(Value::as_str) {
