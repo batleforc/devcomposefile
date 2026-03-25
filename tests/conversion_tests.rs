@@ -1244,6 +1244,17 @@ services:
     } else {
         panic!("expected container");
     }
+
+    // Verify the command appears in YAML output
+    let yaml_out = serde_yaml::to_string(&result.devfile).unwrap();
+    assert!(
+        yaml_out.contains("post-start-app"),
+        "YAML output should contain post-start-app command:\n{yaml_out}"
+    );
+    assert!(
+        yaml_out.contains("npm run migrate"),
+        "YAML output should contain command line:\n{yaml_out}"
+    );
 }
 
 #[test]
