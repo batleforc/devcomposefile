@@ -165,15 +165,16 @@ fn describe_env_rule(rule: &EnvTranslationRule) -> String {
 
 fn apply_env_rule(service: &mut ComposeService, rule: &EnvTranslationRule) {
     if let Some(from) = &rule.from
-        && let Some(existing) = service.environment.get(from).cloned() {
-            if rule.remove {
-                service.environment.remove(from);
-            }
-
-            if let Some(to) = &rule.to {
-                service.environment.insert(to.clone(), existing);
-            }
+        && let Some(existing) = service.environment.get(from).cloned()
+    {
+        if rule.remove {
+            service.environment.remove(from);
         }
+
+        if let Some(to) = &rule.to {
+            service.environment.insert(to.clone(), existing);
+        }
+    }
 
     for (k, v) in &rule.set {
         service.environment.insert(k.clone(), v.clone());
@@ -220,7 +221,7 @@ mod tests {
             service.image.as_deref(),
             Some("cache.local/library/nginx:latest")
         );
-        assert!(service.environment.get("A").is_none());
+        assert!(!service.environment.contains_key("A"));
         assert_eq!(service.environment.get("B").map(String::as_str), Some("1"));
         assert!(traces.len() >= 2);
         assert!(traces[0].description.contains("Image rewritten"));

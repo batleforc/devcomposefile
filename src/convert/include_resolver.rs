@@ -109,23 +109,22 @@ fn resolve_recursive(
                         resolved.extend(sub_docs);
                     }
                     Err(err) => {
-                        diagnostics
-                            .push(format!("Failed to parse included file `{normalized}`: {err}"));
+                        diagnostics.push(format!(
+                            "Failed to parse included file `{normalized}`: {err}"
+                        ));
                     }
                 }
             } else {
                 match context {
                     IncludeContext::Git(repo_ref) => {
                         let include_ref = resolve_git_path(repo_ref, &normalized);
-                        let raw_url =
-                            crate::domain::git_fetch::raw_content_url(&include_ref);
+                        let raw_url = crate::domain::git_fetch::raw_content_url(&include_ref);
                         pending_fetches.push(PendingFetch {
                             path: normalized.clone(),
                             raw_url,
                         });
-                        diagnostics.push(format!(
-                            "Include `{normalized}` will be fetched from Git."
-                        ));
+                        diagnostics
+                            .push(format!("Include `{normalized}` will be fetched from Git."));
                     }
                     IncludeContext::Local => {
                         diagnostics.push(format!(
@@ -248,7 +247,12 @@ mod tests {
         };
 
         let result = resolve_includes(vec![project], &IncludeContext::Local, &BTreeMap::new());
-        assert!(result.diagnostics.iter().any(|d| d.contains("missing.yml") && d.contains("not found")));
+        assert!(
+            result
+                .diagnostics
+                .iter()
+                .any(|d| d.contains("missing.yml") && d.contains("not found"))
+        );
         assert!(result.pending_fetches.is_empty());
     }
 
@@ -273,8 +277,16 @@ mod tests {
 
         let result = resolve_includes(vec![project], &context, &BTreeMap::new());
         assert_eq!(result.pending_fetches.len(), 1);
-        assert!(result.pending_fetches[0].raw_url.contains("raw.githubusercontent.com"));
-        assert!(result.pending_fetches[0].raw_url.contains("other/compose.yml"));
+        assert!(
+            result.pending_fetches[0]
+                .raw_url
+                .contains("raw.githubusercontent.com")
+        );
+        assert!(
+            result.pending_fetches[0]
+                .raw_url
+                .contains("other/compose.yml")
+        );
     }
 
     #[test]
@@ -303,7 +315,10 @@ services:
         assert!(result.pending_fetches.is_empty());
         // First project is the included one (db), last is the main document.
         assert!(result.projects[0].services.contains_key("db"));
-        assert_eq!(result.projects.last().unwrap().name.as_deref(), Some("main"));
+        assert_eq!(
+            result.projects.last().unwrap().name.as_deref(),
+            Some("main")
+        );
     }
 
     #[test]
@@ -339,7 +354,17 @@ services:
         let result = resolve_includes(vec![main], &IncludeContext::Local, &registry);
         assert!(result.diagnostics.iter().any(|d| d.contains("cycle")));
         // Should still resolve what it can without hanging.
-        assert!(result.projects.iter().any(|p| p.services.contains_key("web")));
-        assert!(result.projects.iter().any(|p| p.services.contains_key("api")));
+        assert!(
+            result
+                .projects
+                .iter()
+                .any(|p| p.services.contains_key("web"))
+        );
+        assert!(
+            result
+                .projects
+                .iter()
+                .any(|p| p.services.contains_key("api"))
+        );
     }
 }

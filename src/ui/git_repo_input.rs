@@ -82,11 +82,12 @@ pub fn GitRepoInput(
                         let alt_url = raw_content_url(&alt);
                         fetch_status.set(format!("Trying {alt_path}..."));
                         if let Ok(alt_resp) = Request::get(&alt_url).send().await
-                            && alt_resp.ok() {
-                                let text = alt_resp.text().await;
-                                found = Some((text, alt));
-                                break;
-                            }
+                            && alt_resp.ok()
+                        {
+                            let text = alt_resp.text().await;
+                            found = Some((text, alt));
+                            break;
+                        }
                     }
                     match found {
                         Some((text, alt)) => (true, text, alt),

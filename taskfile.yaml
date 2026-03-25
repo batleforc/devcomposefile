@@ -1,0 +1,17 @@
+version: "3"
+
+tasks:
+  init:
+    desc: "Initialize the project"
+    silent: true
+    cmds:
+      - echo "Initializing the project"
+      - mise install
+      - cargo install trunk
+      - cog install-hook -a -o
+  lint:
+    desc: "Run linters and formatters"
+    cmds:
+      - echo "Running linters and formatters"
+      - cargo fmt --all -- --check
+      - cargo clippy --all-targets -- -D warnings
