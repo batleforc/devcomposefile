@@ -240,5 +240,14 @@ pub fn App() -> impl IntoView {
             <DiagnosticsPanel diagnostics=diagnostics />
             <TracesPanel traces=applied_rules />
         </main>
+
+        <footer class="site-footer">
+            <p>
+                "Made with \u{2764}\u{fe0f}, too much \u{2615} and a little \u{1f916}"
+            </p>
+            <p class="commit-ref">
+                {format!("commit {}", env!("GIT_COMMIT_SHORT"))}
+            </p>
+        </footer>
     }
 }

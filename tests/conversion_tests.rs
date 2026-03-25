@@ -1336,6 +1336,49 @@ services:
 }
 
 #[test]
+fn post_start_with_depends_on_no_command() {
+    let compose = r#"
+services:
+  db:
+    image: postgres:16
+  app:
+    image: node:20
+    post_start: ["npm", "run", "seed"]
+    depends_on:
+      - db
+"#;
+    let projects = parse_compose_documents(compose).expect("parse");
+    let merged = merge_projects(projects);
+    let result = convert_to_devfile(merged, RuleSet::default(), None);
+
+    // post-start-app command should exist even without command/entrypoint
+    let cmd = result
+        .devfile
+        .commands
+        .iter()
+        .find(|c| c.id == "post-start-app")
+        .expect("post-start-app command should exist");
+    assert_eq!(cmd.exec.command_line, "npm run seed");
+
+    // No run-app because there was no command/entrypoint
+    assert!(
+        !result.devfile.commands.iter().any(|c| c.id == "run-app"),
+        "run-app should not exist"
+    );
+
+    // postStart events should contain the post_start command
+    let events = result.devfile.events.as_ref().expect("events");
+    assert!(events.post_start.contains(&String::from("post-start-app")));
+
+    // YAML output should contain the command
+    let yaml_out = serde_yaml::to_string(&result.devfile).unwrap();
+    assert!(
+        yaml_out.contains("post-start-app"),
+        "YAML should contain post-start-app:\n{yaml_out}"
+    );
+}
+
+#[test]
 fn post_start_override_merges_from_later_document() {
     let base = r#"
 services:
