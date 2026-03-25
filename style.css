@@ -313,16 +313,73 @@ details.collapsible.nested > .panel-summary > span {
 }
 
 /* --- diagnostics --- */
-.diagnostics {
-  margin: 0;
-  padding-left: 1.1rem;
-  display: grid;
-  gap: 0.35rem;
+.diagnostics-panel .panel-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
 }
 
-.diagnostics li {
+.diagnostics-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.6em;
+  height: 1.6em;
+  padding: 0 0.3em;
+  border-radius: 999px;
+  background: var(--warn);
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.diagnostics {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.diag-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  line-height: 1.5;
+  border-left: 3px solid transparent;
+}
+
+.diag-item.diag-error {
+  background: rgba(255, 85, 85, 0.08);
+  border-left-color: #ff5555;
+  color: #ff6e6e;
+}
+
+.diag-item.diag-warn {
+  background: rgba(255, 183, 77, 0.08);
+  border-left-color: var(--warn);
   color: var(--warn);
-  font-size: 0.88rem;
+}
+
+.diag-item.diag-info {
+  background: rgba(125, 207, 255, 0.08);
+  border-left-color: #7dcfff;
+  color: #a9b1d6;
+}
+
+.diag-icon {
+  flex-shrink: 0;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.diag-text {
+  word-break: break-word;
 }
 
 /* --- traces --- */
@@ -669,41 +726,41 @@ details.collapsible.nested > .panel-summary > span {
 }
 
 .hl-key {
-  color: #7dcfff;
+  color: #005cc5;
 }
 
 .hl-string {
-  color: #9ece6a;
+  color: #22863a;
 }
 
 .hl-number {
-  color: #ff9e64;
+  color: #b33000;
 }
 
 .hl-boolean {
-  color: #ff9e64;
+  color: #b33000;
 }
 
 .hl-null {
-  color: #737aa2;
+  color: #6a737d;
   font-style: italic;
 }
 
 .hl-comment {
-  color: #565f89;
+  color: #6a737d;
   font-style: italic;
 }
 
 .hl-punctuation {
-  color: #89ddff;
+  color: #24292e;
 }
 
 .hl-separator {
-  color: #565f89;
+  color: #6a737d;
 }
 
 .hl-anchor {
-  color: #bb9af7;
+  color: #6f42c1;
 }
 
 /* ── Footer ──────────────────────── */
