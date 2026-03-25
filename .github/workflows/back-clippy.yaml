@@ -1,0 +1,64 @@
+# This workflow uses actions that are not certified by GitHub.
+# They are provided by a third-party and are governed by
+# separate terms of service, privacy policy, and support
+# documentation.
+# rust-clippy is a tool that runs a bunch of lints to catch common
+# mistakes in your Rust code and help improve your Rust code.
+# More details at https://github.com/rust-lang/rust-clippy
+# and https://rust-lang.github.io/rust-clippy/
+
+name: 🦀 Rust Clippy Analysis
+
+# 🔍 This workflow runs Rust Clippy static analysis to catch common mistakes,
+# improve code quality, and ensure Rust best practices are followed.
+# Triggered on push, PR, schedule, and manual dispatch.
+on:
+  push:
+    branches: ["main", "*"]
+    paths:
+      - "**/*.rs" # 🎯 Only run when Rust files change
+  pull_request:
+    # The branches below must be a subset of the branches above
+    branches: ["main"]
+    paths:
+      - "**/*.rs" # 🎯 Only run when Rust files change
+  schedule:
+    - cron: "50 23 * * *" # 🕚 Daily at 23:50 UTC for security scanning
+  workflow_dispatch: # 🚀 Allow manual triggering
+
+permissions:
+  contents: read
+
+jobs:
+  rust-clippy-analyze:
+    name: 🔍 Run Rust Clippy Analysis
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # 📖 Read repository contents
+      security-events: write # 🔒 Write security analysis results
+      actions: read # ⚡ Read action status (required for private repos)
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: 🦀 Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@4be9e76fd7c4901c61fb841f559994984270fce7 # stable
+        with:
+          toolchain: stable
+          components: clippy, rustfmt # 🔧 Essential Rust tools
+
+      - name: 📦 Install SARIF Tools
+        run: cargo install clippy-sarif sarif-fmt cargo-audit
+        # 🛠️ Tools for converting clippy output to SARIF format for GitHub integration
+
+      - name: 🔍 Run Clippy Analysis
+        run: cargo clippy --all-features --message-format=json | clippy-sarif | tee rust-clippy-results.sarif | sarif-fmt
+        continue-on-error: true
+        # 🎯 Analyze all code with full features, convert to SARIF, and format output
+
+      - name: 📤 Upload Results to GitHub Security
+        uses: github/codeql-action/upload-sarif@38697555549f1db7851b81482ff19f1fa5c4fedc # v4.34.1
+        with:
+          sarif_file: rust-clippy-results.sarif
+          wait-for-processing: true
+        # 🔒 Upload analysis results to GitHub Security tab for visibility
