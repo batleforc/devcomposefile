@@ -21,7 +21,7 @@ pub fn rewrite_service_references(project: &mut ComposeProject) -> Vec<RuleTrace
         let env_keys: Vec<String> = service.environment.keys().cloned().collect();
         for env_key in env_keys {
             if let Some(val) = service.environment.get_mut(&env_key) {
-                let rewritten = replace_service_hostnames(val, &svc_key, &service_names);
+                let rewritten = replace_service_hostnames(val, svc_key, &service_names);
                 if *val != rewritten {
                     traces.push(RuleTrace {
                         service: svc_key.clone(),
@@ -36,7 +36,7 @@ pub fn rewrite_service_references(project: &mut ComposeProject) -> Vec<RuleTrace
 
         // command args
         for item in &mut service.command {
-            let rewritten = replace_service_hostnames(item, &svc_key, &service_names);
+            let rewritten = replace_service_hostnames(item, svc_key, &service_names);
             if *item != rewritten {
                 traces.push(RuleTrace {
                     service: svc_key.clone(),
@@ -50,7 +50,7 @@ pub fn rewrite_service_references(project: &mut ComposeProject) -> Vec<RuleTrace
 
         // entrypoint args
         for item in &mut service.entrypoint {
-            let rewritten = replace_service_hostnames(item, &svc_key, &service_names);
+            let rewritten = replace_service_hostnames(item, svc_key, &service_names);
             if *item != rewritten {
                 traces.push(RuleTrace {
                     service: svc_key.clone(),
@@ -138,14 +138,12 @@ fn is_hostname_reference(s: &str, pos: usize, len: usize) -> bool {
     }
 
     // Followed by ":" + digit  (host:port pattern)
-    if after_str.starts_with(':') {
-        if let Some(ch) = after_str.chars().nth(1) {
-            if ch.is_ascii_digit() {
+    if after_str.starts_with(':')
+        && let Some(ch) = after_str.chars().nth(1)
+            && ch.is_ascii_digit() {
                 // Also verify the character before the name is a word boundary
                 return is_word_boundary_before(s, pos);
             }
-        }
-    }
 
     // Followed by "/" and somewhere earlier there's "://"
     if after_str.starts_with('/') && before.contains("://") {

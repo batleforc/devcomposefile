@@ -168,10 +168,7 @@ pub fn RuleEditor(runtime_rules_input: RwSignal<String>) -> impl IntoView {
             || ruleset.parent_devfile.is_some();
 
         if has_content {
-            match serde_json::to_string_pretty(&ruleset) {
-                Ok(json) => runtime_rules_input.set(json),
-                Err(_) => {}
-            }
+            if let Ok(json) = serde_json::to_string_pretty(&ruleset) { runtime_rules_input.set(json) }
         } else {
             runtime_rules_input.set(String::new());
         }

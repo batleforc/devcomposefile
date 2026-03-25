@@ -20,13 +20,12 @@ pub fn IncludeFilesPanel(file_registry: RwSignal<BTreeMap<String, String>>) -> i
             let file_registry = file_registry;
 
             let onload = Closure::wrap(Box::new(move |_event: web_sys::Event| {
-                if let Ok(result) = reader_clone.result() {
-                    if let Some(text) = result.as_string() {
+                if let Ok(result) = reader_clone.result()
+                    && let Some(text) = result.as_string() {
                         file_registry.update(|reg| {
                             reg.insert(name.clone(), text);
                         });
                     }
-                }
             }) as Box<dyn FnMut(_)>);
 
             reader.set_onload(Some(onload.as_ref().unchecked_ref()));

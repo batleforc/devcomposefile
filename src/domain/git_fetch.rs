@@ -1,5 +1,5 @@
-/// Translates user-friendly Git hosting URLs to raw-content URLs
-/// and provides the fetch logic for retrieving Compose files from repositories.
+// Translates user-friendly Git hosting URLs to raw-content URLs
+// and provides the fetch logic for retrieving Compose files from repositories.
 
 /// Default file paths to try in order when no explicit path is provided.
 pub const DEFAULT_COMPOSE_PATHS: &[&str] = &["docker-compose.yml", "compose.yaml"];

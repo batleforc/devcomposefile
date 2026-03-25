@@ -12,8 +12,8 @@ pub fn ComposeInput(compose_input: RwSignal<String>) -> impl IntoView {
                 let reader = FileReader::new().expect("FileReader");
                 let reader_clone = reader.clone();
                 let closure = Closure::wrap(Box::new(move || {
-                    if let Ok(result) = reader_clone.result() {
-                        if let Some(text) = result.as_string() {
+                    if let Ok(result) = reader_clone.result()
+                        && let Some(text) = result.as_string() {
                             let current = compose_input.get();
                             if current.trim().is_empty() {
                                 compose_input.set(text);
@@ -21,7 +21,6 @@ pub fn ComposeInput(compose_input: RwSignal<String>) -> impl IntoView {
                                 compose_input.set(format!("{current}\n---\n{text}"));
                             }
                         }
-                    }
                 }) as Box<dyn Fn()>);
                 reader.set_onloadend(Some(closure.as_ref().unchecked_ref()));
                 closure.forget();
@@ -33,11 +32,10 @@ pub fn ComposeInput(compose_input: RwSignal<String>) -> impl IntoView {
     let on_drop = move |ev: DragEvent| {
         ev.prevent_default();
         dragging.set(false);
-        if let Some(dt) = ev.data_transfer() {
-            if let Some(files) = dt.files() {
+        if let Some(dt) = ev.data_transfer()
+            && let Some(files) = dt.files() {
                 read_files(files);
             }
-        }
     };
 
     let on_dragover = move |ev: DragEvent| {

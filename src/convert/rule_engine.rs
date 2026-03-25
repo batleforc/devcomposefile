@@ -164,8 +164,8 @@ fn describe_env_rule(rule: &EnvTranslationRule) -> String {
 }
 
 fn apply_env_rule(service: &mut ComposeService, rule: &EnvTranslationRule) {
-    if let Some(from) = &rule.from {
-        if let Some(existing) = service.environment.get(from).cloned() {
+    if let Some(from) = &rule.from
+        && let Some(existing) = service.environment.get(from).cloned() {
             if rule.remove {
                 service.environment.remove(from);
             }
@@ -174,7 +174,6 @@ fn apply_env_rule(service: &mut ComposeService, rule: &EnvTranslationRule) {
                 service.environment.insert(to.clone(), existing);
             }
         }
-    }
 
     for (k, v) in &rule.set {
         service.environment.insert(k.clone(), v.clone());
