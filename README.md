@@ -1,5 +1,7 @@
 # Compose to Devfile (Leptos)
 
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/batleforc/devcomposefile/badge)](https://scorecard.dev/viewer/?uri=github.com/batleforc/devcomposefile)
+
 Frontend-only Rust + Leptos (WASM) app that converts Docker Compose YAML to [Devfile 2.3.0](https://devfile.io/docs/2.3.0/what-is-a-devfile) in the browser. No backend required — everything runs client-side.
 
 ## Quick Start
