@@ -8,14 +8,16 @@ pub fn RulesPanel(
     ide_image_input: RwSignal<String>,
     startup_rules_status: RwSignal<String>,
 ) -> impl IntoView {
-    let show_defaults = RwSignal::new(false);
     let use_visual = RwSignal::new(true);
     let default_rules_json = include_str!("../../assets/rules/default-rules.json").to_string();
 
     view! {
-        <section class="panel">
-            <div class="panel-header">
+        <details class="panel collapsible">
+            <summary class="panel-summary">
                 <h2>"Rules"</h2>
+            </summary>
+
+            <div class="panel-header">
                 <div class="panel-actions">
                     <button
                         class="btn-secondary"
@@ -33,30 +35,12 @@ pub fn RulesPanel(
             </div>
             <p class="status">{move || startup_rules_status.get()}</p>
 
-            <div class="defaults-toggle">
-                <button
-                    class="btn-link"
-                    on:click=move |_| show_defaults.set(!show_defaults.get())
-                >
-                    {move || {
-                        if show_defaults.get() {
-                            "Hide bundled defaults"
-                        } else {
-                            "Show bundled defaults"
-                        }
-                    }}
-                </button>
-            </div>
-
-            {move || {
-                if show_defaults.get() {
-                    Some(view! {
-                        <pre class="defaults-preview">{default_rules_json.clone()}</pre>
-                    })
-                } else {
-                    None
-                }
-            }}
+            <details class="collapsible nested">
+                <summary class="panel-summary">
+                    <span>"Bundled defaults"</span>
+                </summary>
+                <pre class="defaults-preview">{default_rules_json}</pre>
+            </details>
 
             {move || {
                 if use_visual.get() {
@@ -94,6 +78,6 @@ pub fn RulesPanel(
                     "This runtime value overrides rules for the IDE base container image."
                 </p>
             </div>
-        </section>
+        </details>
     }
 }

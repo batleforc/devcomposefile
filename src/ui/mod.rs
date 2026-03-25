@@ -5,4 +5,6 @@ pub mod include_files;
 pub mod output;
 pub mod rule_editor;
 pub mod rules_panel;
+pub mod service_refs_panel;
 pub mod traces_panel;
+pub mod yaml_highlight;

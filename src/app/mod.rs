@@ -6,7 +6,8 @@ use leptos::task::spawn_local;
 
 use crate::convert::include_resolver::{IncludeContext, resolve_includes};
 use crate::convert::merge::merge_projects;
-use crate::convert::transform::convert_to_devfile;
+use crate::convert::service_refs::{DetectedRef, detect_service_references};
+use crate::convert::transform::convert_to_devfile_with_overrides;
 use crate::convert::validate::validate_devfile;
 use crate::domain::compose::parse_compose_documents;
 use crate::domain::git_fetch::RepoRef;
@@ -17,6 +18,7 @@ use crate::ui::git_repo_input::GitRepoInput;
 use crate::ui::include_files::IncludeFilesPanel;
 use crate::ui::output::OutputPanel;
 use crate::ui::rules_panel::RulesPanel;
+use crate::ui::service_refs_panel::ServiceRefsPanel;
 use crate::ui::traces_panel::TracesPanel;
 
 #[component]
@@ -35,6 +37,8 @@ pub fn App() -> impl IntoView {
 
     let file_registry = RwSignal::new(BTreeMap::<String, String>::new());
     let git_context = RwSignal::new(None::<RepoRef>);
+    let detected_refs = RwSignal::new(Vec::<DetectedRef>::new());
+    let service_ref_overrides = RwSignal::new(BTreeMap::<String, String>::new());
 
     Effect::new(move |_| {
         if startup_rules_loaded.get() {
@@ -145,6 +149,9 @@ pub fn App() -> impl IntoView {
 
             let merged_project = merge_projects(resolution.projects);
 
+            // Detect inter-service references for the UI
+            detected_refs.set(detect_service_references(&merged_project));
+
             let default_rules = match load_default_rules() {
                 Ok(rules) => rules,
                 Err(err) => {
@@ -183,7 +190,12 @@ pub fn App() -> impl IntoView {
                 }
             };
 
-            let conversion = convert_to_devfile(merged_project, final_rules, ide_override);
+            let conversion = convert_to_devfile_with_overrides(
+                merged_project,
+                final_rules,
+                ide_override,
+                &service_ref_overrides.get(),
+            );
             messages.extend(conversion.diagnostics);
             messages.extend(validate_devfile(&conversion.devfile));
 
@@ -229,6 +241,8 @@ pub fn App() -> impl IntoView {
                 ide_image_input=ide_image_input
                 startup_rules_status=startup_rules_status
             />
+
+            <ServiceRefsPanel detected_refs=detected_refs overrides=service_ref_overrides />
 
             <section class="actions">
                 <button class="convert" on:click=on_convert>

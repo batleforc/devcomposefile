@@ -70,7 +70,9 @@ pub fn OutputPanel(yaml: RwSignal<String>) -> impl IntoView {
                     </button>
                 </div>
             </div>
-            <textarea class="editor" readonly=true prop:value=move || yaml.get()></textarea>
+            <pre class="editor yaml-highlighted"><code inner_html=move || {
+                crate::ui::yaml_highlight::highlight_yaml(&yaml.get())
+            }></code></pre>
         </section>
     }
 }

@@ -1,15 +1,112 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::convert::rule_engine::RuleTrace;
 use crate::domain::compose::ComposeProject;
 
+/// A detected reference to another service used as a hostname.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DetectedRef {
+    /// The service that contains the reference.
+    pub source_service: String,
+    /// The field where it was found (e.g. env key name, "command", "entrypoint").
+    pub field: String,
+    /// The original full value containing the reference.
+    pub original_value: String,
+    /// The target service name referenced as hostname.
+    pub target_service: String,
+}
+
+/// Scan a `ComposeProject` for inter-service hostname references without
+/// modifying anything. Returns one entry per (source, field, target) tuple.
+pub fn detect_service_references(project: &ComposeProject) -> Vec<DetectedRef> {
+    let service_names: BTreeSet<String> = project.services.keys().cloned().collect();
+    // Sort longest-first so that e.g. "truc-engines-proxy" is checked before "truc-engines"
+    let sorted_names: Vec<&String> = {
+        let mut v: Vec<&String> = service_names.iter().collect();
+        v.sort_by(|a, b| b.len().cmp(&a.len()).then_with(|| a.cmp(b)));
+        v
+    };
+    let mut refs = Vec::new();
+
+    for (svc_key, service) in &project.services {
+        for (env_key, val) in &service.environment {
+            for name in &sorted_names {
+                if *name == svc_key {
+                    continue;
+                }
+                if contains_hostname_reference(val, name) {
+                    refs.push(DetectedRef {
+                        source_service: svc_key.clone(),
+                        field: format!("env:{env_key}"),
+                        original_value: val.clone(),
+                        target_service: (*name).clone(),
+                    });
+                }
+            }
+        }
+
+        for item in &service.command {
+            for name in &sorted_names {
+                if *name == svc_key {
+                    continue;
+                }
+                if contains_hostname_reference(item, name) {
+                    refs.push(DetectedRef {
+                        source_service: svc_key.clone(),
+                        field: "command".to_string(),
+                        original_value: item.clone(),
+                        target_service: (*name).clone(),
+                    });
+                }
+            }
+        }
+
+        for item in &service.entrypoint {
+            for name in &sorted_names {
+                if *name == svc_key {
+                    continue;
+                }
+                if contains_hostname_reference(item, name) {
+                    refs.push(DetectedRef {
+                        source_service: svc_key.clone(),
+                        field: "entrypoint".to_string(),
+                        original_value: item.clone(),
+                        target_service: (*name).clone(),
+                    });
+                }
+            }
+        }
+    }
+
+    refs
+}
+
+/// Check whether `input` contains at least one hostname reference to `name`.
+fn contains_hostname_reference(input: &str, name: &str) -> bool {
+    let mut search_from = 0;
+    while let Some(pos) = input[search_from..].find(name) {
+        let abs_pos = search_from + pos;
+        if is_hostname_reference(input, abs_pos, name.len()) {
+            return true;
+        }
+        search_from = abs_pos + name.len();
+    }
+    false
+}
+
 /// Scan all string fields in a `ComposeProject` for references to other
 /// service names used as hostnames (e.g. `db:5432`, `http://redis:6379/path`,
-/// `mongodb://mongo:27017/mydb`) and replace those service names with
-/// `localhost`.
+/// `mongodb://mongo:27017/mydb`) and replace those service names with the
+/// value from `overrides` (or `localhost` when no override is provided).
+///
+/// If the override value equals the target service name, the reference is kept
+/// unchanged (i.e. "keep original" behaviour).
 ///
 /// Returns trace entries describing each replacement.
-pub fn rewrite_service_references(project: &mut ComposeProject) -> Vec<RuleTrace> {
+pub fn rewrite_service_references(
+    project: &mut ComposeProject,
+    overrides: &BTreeMap<String, String>,
+) -> Vec<RuleTrace> {
     let service_names: BTreeSet<String> = project.services.keys().cloned().collect();
     let mut traces = Vec::new();
 
@@ -21,12 +118,13 @@ pub fn rewrite_service_references(project: &mut ComposeProject) -> Vec<RuleTrace
         let env_keys: Vec<String> = service.environment.keys().cloned().collect();
         for env_key in env_keys {
             if let Some(val) = service.environment.get_mut(&env_key) {
-                let rewritten = replace_service_hostnames(val, svc_key, &service_names);
+                let rewritten = replace_service_hostnames(val, svc_key, &service_names, overrides);
                 if *val != rewritten {
+                    let replacement_label = overrides_label(overrides);
                     traces.push(RuleTrace {
                         service: svc_key.clone(),
                         description: format!(
-                            "Env `{env_key}`: replaced service reference → localhost ({val} → {rewritten})"
+                            "Env `{env_key}`: replaced service reference → {replacement_label} ({val} → {rewritten})"
                         ),
                     });
                     *val = rewritten;
@@ -36,12 +134,13 @@ pub fn rewrite_service_references(project: &mut ComposeProject) -> Vec<RuleTrace
 
         // command args
         for item in &mut service.command {
-            let rewritten = replace_service_hostnames(item, svc_key, &service_names);
+            let rewritten = replace_service_hostnames(item, svc_key, &service_names, overrides);
             if *item != rewritten {
+                let replacement_label = overrides_label(overrides);
                 traces.push(RuleTrace {
                     service: svc_key.clone(),
                     description: format!(
-                        "Command arg: replaced service reference → localhost ({item} → {rewritten})"
+                        "Command arg: replaced service reference → {replacement_label} ({item} → {rewritten})"
                     ),
                 });
                 *item = rewritten;
@@ -50,12 +149,13 @@ pub fn rewrite_service_references(project: &mut ComposeProject) -> Vec<RuleTrace
 
         // entrypoint args
         for item in &mut service.entrypoint {
-            let rewritten = replace_service_hostnames(item, svc_key, &service_names);
+            let rewritten = replace_service_hostnames(item, svc_key, &service_names, overrides);
             if *item != rewritten {
+                let replacement_label = overrides_label(overrides);
                 traces.push(RuleTrace {
                     service: svc_key.clone(),
                     description: format!(
-                        "Entrypoint arg: replaced service reference → localhost ({item} → {rewritten})"
+                        "Entrypoint arg: replaced service reference → {replacement_label} ({item} → {rewritten})"
                     ),
                 });
                 *item = rewritten;
@@ -66,21 +166,42 @@ pub fn rewrite_service_references(project: &mut ComposeProject) -> Vec<RuleTrace
     traces
 }
 
+fn overrides_label(overrides: &BTreeMap<String, String>) -> String {
+    if overrides.is_empty() {
+        "localhost".to_string()
+    } else {
+        "user-defined".to_string()
+    }
+}
+
 /// Replace occurrences of other service names used as hostnames in `input`.
-/// A service name is considered a hostname when followed by `:digit` or
-/// preceded by `://` or `@`, or followed by `/` after a scheme-like prefix.
-///
-/// We skip references to the service's own name to avoid self-replacement.
+/// Uses the value from `overrides` for each target service, falling back to
+/// `localhost`. If the override equals the service name, it's kept unchanged.
 fn replace_service_hostnames(
     input: &str,
     own_service: &str,
     service_names: &BTreeSet<String>,
+    overrides: &BTreeMap<String, String>,
 ) -> String {
     let mut result = input.to_string();
 
-    for name in service_names {
+    // Sort longest-first so "truc-engines-proxy" is replaced before "truc-engines"
+    let mut sorted: Vec<&String> = service_names.iter().collect();
+    sorted.sort_by(|a, b| b.len().cmp(&a.len()).then_with(|| a.cmp(b)));
+
+    for name in sorted {
         // Don't replace self-references
         if name == own_service {
+            continue;
+        }
+
+        let replacement = overrides
+            .get(name.as_str())
+            .cloned()
+            .unwrap_or_else(|| "localhost".to_string());
+
+        // If replacement == service name, the user chose "keep original"
+        if replacement == *name {
             continue;
         }
 
@@ -97,8 +218,9 @@ fn replace_service_hostnames(
                     let abs_pos = after + next;
                     if is_hostname_reference(&result, abs_pos, name.len()) {
                         result = format!(
-                            "{}localhost{}",
+                            "{}{}{}",
                             &result[..abs_pos],
+                            replacement,
                             &result[abs_pos + name.len()..]
                         );
                         continue;
@@ -107,7 +229,12 @@ fn replace_service_hostnames(
                 break;
             }
 
-            result = format!("{}localhost{}", &result[..pos], &result[pos + name.len()..]);
+            result = format!(
+                "{}{}{}",
+                &result[..pos],
+                replacement,
+                &result[pos + name.len()..]
+            );
         }
     }
 
@@ -127,6 +254,12 @@ fn is_hostname_reference(s: &str, pos: usize, len: usize) -> bool {
     let before = &s[..pos];
     let after_str = &s[after..];
 
+    // The character right after the match must NOT continue the hostname token
+    // (e.g. "-" or alphanumeric), otherwise we matched a prefix of a longer name.
+    if !is_word_boundary_after(s, after) {
+        return false;
+    }
+
     // Preceded by "://"
     if before.ends_with("://") {
         return true;
@@ -140,10 +273,11 @@ fn is_hostname_reference(s: &str, pos: usize, len: usize) -> bool {
     // Followed by ":" + digit  (host:port pattern)
     if after_str.starts_with(':')
         && let Some(ch) = after_str.chars().nth(1)
-            && ch.is_ascii_digit() {
-                // Also verify the character before the name is a word boundary
-                return is_word_boundary_before(s, pos);
-            }
+        && ch.is_ascii_digit()
+    {
+        // Also verify the character before the name is a word boundary
+        return is_word_boundary_before(s, pos);
+    }
 
     // Followed by "/" and somewhere earlier there's "://"
     if after_str.starts_with('/') && before.contains("://") {
@@ -151,6 +285,16 @@ fn is_hostname_reference(s: &str, pos: usize, len: usize) -> bool {
     }
 
     false
+}
+
+/// Check that the character after position `pos` is a suitable word boundary
+/// (end of string, or not alphanumeric / underscore / hyphen).
+fn is_word_boundary_after(s: &str, pos: usize) -> bool {
+    if pos >= s.len() {
+        return true;
+    }
+    let next = s.as_bytes()[pos];
+    !next.is_ascii_alphanumeric() && next != b'_' && next != b'-'
 }
 
 /// Check that the character before position `pos` is a suitable word boundary
@@ -208,7 +352,7 @@ mod tests {
 
         let mut project = project_with(vec![("web", svc), ("db", empty_service())]);
 
-        let traces = rewrite_service_references(&mut project);
+        let traces = rewrite_service_references(&mut project, &BTreeMap::new());
 
         assert_eq!(
             project.services["web"].environment["DATABASE_URL"],
@@ -226,7 +370,7 @@ mod tests {
 
         let mut project = project_with(vec![("app", svc), ("cache", empty_service())]);
 
-        let traces = rewrite_service_references(&mut project);
+        let traces = rewrite_service_references(&mut project, &BTreeMap::new());
 
         assert_eq!(
             project.services["app"].environment["REDIS_URL"],
@@ -243,7 +387,7 @@ mod tests {
 
         let mut project = project_with(vec![("api", svc), ("mongo", empty_service())]);
 
-        let traces = rewrite_service_references(&mut project);
+        let traces = rewrite_service_references(&mut project, &BTreeMap::new());
 
         assert_eq!(
             project.services["api"].environment["MONGO_HOST"],
@@ -259,7 +403,7 @@ mod tests {
 
         let mut project = project_with(vec![("worker", svc), ("db", empty_service())]);
 
-        let traces = rewrite_service_references(&mut project);
+        let traces = rewrite_service_references(&mut project, &BTreeMap::new());
 
         assert_eq!(project.services["worker"].command[0], "--host");
         assert_eq!(project.services["worker"].command[1], "localhost:5432");
@@ -273,7 +417,7 @@ mod tests {
 
         let mut project = project_with(vec![("app", svc), ("db", empty_service())]);
 
-        let traces = rewrite_service_references(&mut project);
+        let traces = rewrite_service_references(&mut project, &BTreeMap::new());
 
         assert_eq!(project.services["app"].entrypoint[1], "localhost:5432");
         assert!(!traces.is_empty());
@@ -287,7 +431,7 @@ mod tests {
 
         let mut project = project_with(vec![("web", svc), ("db", empty_service())]);
 
-        let traces = rewrite_service_references(&mut project);
+        let traces = rewrite_service_references(&mut project, &BTreeMap::new());
 
         // "web" should NOT be replaced because it's the service's own name
         assert_eq!(
@@ -305,7 +449,7 @@ mod tests {
 
         let mut project = project_with(vec![("app", svc), ("db", empty_service())]);
 
-        let traces = rewrite_service_references(&mut project);
+        let traces = rewrite_service_references(&mut project, &BTreeMap::new());
 
         // "db" appears in a path but not as a hostname — should NOT be replaced
         assert_eq!(
@@ -323,7 +467,7 @@ mod tests {
 
         let mut project = project_with(vec![("frontend", svc), ("backend", empty_service())]);
 
-        let traces = rewrite_service_references(&mut project);
+        let traces = rewrite_service_references(&mut project, &BTreeMap::new());
 
         assert_eq!(
             project.services["frontend"].environment["API_URL"],
@@ -344,7 +488,7 @@ mod tests {
             ("db", empty_service()),
         ]);
 
-        let traces = rewrite_service_references(&mut project);
+        let traces = rewrite_service_references(&mut project, &BTreeMap::new());
 
         assert_eq!(
             project.services["app"].environment["CONNECT"],
@@ -362,7 +506,7 @@ mod tests {
 
         let mut project = project_with(vec![("solo", svc)]);
 
-        let traces = rewrite_service_references(&mut project);
+        let traces = rewrite_service_references(&mut project, &BTreeMap::new());
 
         assert_eq!(
             project.services["solo"].environment["URL"],
@@ -379,12 +523,150 @@ mod tests {
 
         let mut project = project_with(vec![("worker", svc), ("rabbit", empty_service())]);
 
-        let traces = rewrite_service_references(&mut project);
+        let traces = rewrite_service_references(&mut project, &BTreeMap::new());
 
         assert_eq!(
             project.services["worker"].environment["AMQP"],
             "amqp://guest:guest@localhost:5672/%2F"
         );
         assert!(!traces.is_empty());
+    }
+
+    #[test]
+    fn detect_finds_env_and_command_refs() {
+        let mut web = empty_service();
+        web.environment
+            .insert("DB_URL".into(), "postgres://db:5432/app".into());
+        web.command = vec!["--redis".into(), "cache:6379".into()];
+
+        let project = project_with(vec![
+            ("web", web),
+            ("db", empty_service()),
+            ("cache", empty_service()),
+        ]);
+
+        let refs = detect_service_references(&project);
+        assert_eq!(refs.len(), 2);
+        assert!(
+            refs.iter()
+                .any(|r| r.target_service == "db" && r.field == "env:DB_URL")
+        );
+        assert!(
+            refs.iter()
+                .any(|r| r.target_service == "cache" && r.field == "command")
+        );
+    }
+
+    #[test]
+    fn detect_ignores_self_references() {
+        let mut svc = empty_service();
+        svc.environment
+            .insert("ME".into(), "http://web:8080".into());
+
+        let project = project_with(vec![("web", svc)]);
+        let refs = detect_service_references(&project);
+        assert!(refs.is_empty());
+    }
+
+    #[test]
+    fn override_custom_value() {
+        let mut svc = empty_service();
+        svc.environment
+            .insert("DB".into(), "postgres://db:5432/x".into());
+
+        let mut project = project_with(vec![("app", svc), ("db", empty_service())]);
+
+        let mut overrides = BTreeMap::new();
+        overrides.insert("db".into(), "10.0.0.5".into());
+        let traces = rewrite_service_references(&mut project, &overrides);
+
+        assert_eq!(
+            project.services["app"].environment["DB"],
+            "postgres://10.0.0.5:5432/x"
+        );
+        assert!(!traces.is_empty());
+    }
+
+    #[test]
+    fn override_keep_original() {
+        let mut svc = empty_service();
+        svc.environment
+            .insert("URL".into(), "http://backend:3000/api".into());
+
+        let mut project = project_with(vec![("frontend", svc), ("backend", empty_service())]);
+
+        let mut overrides = BTreeMap::new();
+        overrides.insert("backend".into(), "backend".into());
+        let traces = rewrite_service_references(&mut project, &overrides);
+
+        assert_eq!(
+            project.services["frontend"].environment["URL"],
+            "http://backend:3000/api"
+        );
+        assert!(traces.is_empty());
+    }
+
+    #[test]
+    fn longer_name_not_shadowed_by_prefix_in_detection() {
+        let mut svc = empty_service();
+        svc.environment
+            .insert("PROXY".into(), "http://truc-engines-proxy:8080/api".into());
+
+        let project = project_with(vec![
+            ("app", svc),
+            ("truc-engines", empty_service()),
+            ("truc-engines-proxy", empty_service()),
+        ]);
+
+        let refs = detect_service_references(&project);
+        // Only truc-engines-proxy should be detected, NOT truc-engines
+        assert_eq!(refs.len(), 1);
+        assert_eq!(refs[0].target_service, "truc-engines-proxy");
+    }
+
+    #[test]
+    fn longer_name_not_shadowed_by_prefix_in_rewrite() {
+        let mut svc = empty_service();
+        svc.environment
+            .insert("PROXY".into(), "http://truc-engines-proxy:8080/api".into());
+
+        let mut project = project_with(vec![
+            ("app", svc),
+            ("truc-engines", empty_service()),
+            ("truc-engines-proxy", empty_service()),
+        ]);
+
+        let traces = rewrite_service_references(&mut project, &BTreeMap::new());
+
+        assert_eq!(
+            project.services["app"].environment["PROXY"],
+            "http://localhost:8080/api"
+        );
+        // Only one replacement for truc-engines-proxy, not truc-engines
+        assert_eq!(traces.len(), 1);
+        assert!(traces[0].description.contains("truc-engines-proxy"));
+    }
+
+    #[test]
+    fn both_prefix_and_longer_detected_when_both_referenced() {
+        let mut svc = empty_service();
+        svc.environment.insert(
+            "URLS".into(),
+            "http://truc-engines:3000,http://truc-engines-proxy:8080".into(),
+        );
+
+        let project = project_with(vec![
+            ("app", svc),
+            ("truc-engines", empty_service()),
+            ("truc-engines-proxy", empty_service()),
+        ]);
+
+        let refs = detect_service_references(&project);
+        assert_eq!(refs.len(), 2);
+        assert!(refs.iter().any(|r| r.target_service == "truc-engines"));
+        assert!(
+            refs.iter()
+                .any(|r| r.target_service == "truc-engines-proxy")
+        );
     }
 }

@@ -1,10 +1,11 @@
 use leptos::prelude::*;
 use wasm_bindgen::prelude::*;
-use web_sys::{DragEvent, FileList, FileReader, HtmlInputElement};
+use web_sys::{DragEvent, FileList, FileReader, HtmlInputElement, HtmlTextAreaElement};
 
 #[component]
 pub fn ComposeInput(compose_input: RwSignal<String>) -> impl IntoView {
     let dragging = RwSignal::new(false);
+    let highlight_ref = NodeRef::<leptos::html::Pre>::new();
 
     let read_files = move |files: FileList| {
         for i in 0..files.length() {
@@ -13,14 +14,15 @@ pub fn ComposeInput(compose_input: RwSignal<String>) -> impl IntoView {
                 let reader_clone = reader.clone();
                 let closure = Closure::wrap(Box::new(move || {
                     if let Ok(result) = reader_clone.result()
-                        && let Some(text) = result.as_string() {
-                            let current = compose_input.get();
-                            if current.trim().is_empty() {
-                                compose_input.set(text);
-                            } else {
-                                compose_input.set(format!("{current}\n---\n{text}"));
-                            }
+                        && let Some(text) = result.as_string()
+                    {
+                        let current = compose_input.get();
+                        if current.trim().is_empty() {
+                            compose_input.set(text);
+                        } else {
+                            compose_input.set(format!("{current}\n---\n{text}"));
                         }
+                    }
                 }) as Box<dyn Fn()>);
                 reader.set_onloadend(Some(closure.as_ref().unchecked_ref()));
                 closure.forget();
@@ -33,9 +35,10 @@ pub fn ComposeInput(compose_input: RwSignal<String>) -> impl IntoView {
         ev.prevent_default();
         dragging.set(false);
         if let Some(dt) = ev.data_transfer()
-            && let Some(files) = dt.files() {
-                read_files(files);
-            }
+            && let Some(files) = dt.files()
+        {
+            read_files(files);
+        }
     };
 
     let on_dragover = move |ev: DragEvent| {
@@ -94,12 +97,31 @@ pub fn ComposeInput(compose_input: RwSignal<String>) -> impl IntoView {
                 on:dragover=on_dragover
                 on:dragleave=on_dragleave
             >
-                <textarea
-                    class="editor"
-                    placeholder="Paste Docker Compose YAML here, or drag & drop .yml files. For multiple files, separate with ---"
-                    prop:value=move || compose_input.get()
-                    on:input=move |ev| compose_input.set(event_target_value(&ev))
-                ></textarea>
+                <div class="editor-highlight-wrap">
+                    <pre class="editor-highlight yaml-highlighted" aria-hidden="true" node_ref=highlight_ref><code inner_html=move || {
+                        let src = compose_input.get();
+                        if src.is_empty() {
+                            String::new()
+                        } else {
+                            crate::ui::yaml_highlight::highlight_yaml(&src)
+                        }
+                    }></code></pre>
+                    <textarea
+                        class="editor editor-overlay"
+                        placeholder="Paste Docker Compose YAML here, or drag & drop .yml files. For multiple files, separate with ---"
+                        prop:value=move || compose_input.get()
+                        on:input=move |ev| compose_input.set(event_target_value(&ev))
+                        on:scroll=move |ev| {
+                            let ta: HtmlTextAreaElement = event_target(&ev);
+                            if let Some(pre) = highlight_ref.get() {
+                                let el: &web_sys::Element = &pre;
+                                el.set_scroll_top(ta.scroll_top());
+                                el.set_scroll_left(ta.scroll_left());
+                            }
+                        }
+                        spellcheck="false"
+                    ></textarea>
+                </div>
             </div>
         </section>
     }

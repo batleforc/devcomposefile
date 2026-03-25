@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap as StdBTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeMap as StdBTreeMap, BTreeSet};
 
 use crate::convert::rule_engine::{RuleTrace, apply_rules};
 use crate::convert::service_refs::rewrite_service_references;
@@ -17,9 +17,18 @@ pub struct ConversionResult {
 }
 
 pub fn convert_to_devfile(
+    project: ComposeProject,
+    rules: RuleSet,
+    ide_image_override: Option<String>,
+) -> ConversionResult {
+    convert_to_devfile_with_overrides(project, rules, ide_image_override, &BTreeMap::new())
+}
+
+pub fn convert_to_devfile_with_overrides(
     mut project: ComposeProject,
     rules: RuleSet,
     ide_image_override: Option<String>,
+    service_ref_overrides: &BTreeMap<String, String>,
 ) -> ConversionResult {
     let mut components = Vec::new();
     let mut commands: Vec<Command> = Vec::new();
@@ -35,8 +44,8 @@ pub fn convert_to_devfile(
     // Extract ${VAR} references and rewrite to {{VAR}} Devfile syntax
     let variables = extract_and_rewrite_variables(&mut project);
 
-    // Replace inter-service hostname references with localhost
-    let ref_traces = rewrite_service_references(&mut project);
+    // Replace inter-service hostname references with user-chosen values (default: localhost)
+    let ref_traces = rewrite_service_references(&mut project, service_ref_overrides);
     rule_traces.extend(ref_traces);
 
     // Pre-scan for container ports used by multiple services

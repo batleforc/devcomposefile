@@ -86,6 +86,47 @@ body {
   box-shadow: var(--shadow-md);
 }
 
+details.collapsible {
+  cursor: default;
+}
+
+details.collapsible > .panel-summary {
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+}
+
+details.collapsible > .panel-summary::-webkit-details-marker {
+  display: none;
+}
+
+details.collapsible > .panel-summary h2,
+details.collapsible > .panel-summary > span {
+  display: inline;
+}
+
+details.collapsible > .panel-summary h2::before,
+details.collapsible > .panel-summary > span::before {
+  content: "▶ ";
+  font-size: 0.75em;
+  margin-right: 0.35rem;
+}
+
+details.collapsible[open] > .panel-summary h2::before,
+details.collapsible[open] > .panel-summary > span::before {
+  content: "▼ ";
+}
+
+details.collapsible.nested {
+  margin-top: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+details.collapsible.nested > .panel-summary > span {
+  font-size: 0.85rem;
+  color: var(--text-muted, #888);
+}
+
 .panel-header {
   display: flex;
   align-items: center;
@@ -93,6 +134,14 @@ body {
   flex-wrap: wrap;
   gap: 0.5rem;
   margin-bottom: 0.75rem;
+}
+
+.panel h2 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--ink);
 }
 
 .panel-header h2 {
@@ -344,6 +393,8 @@ body {
 }
 
 .include-panel .badge {
+  display: inline-block;
+  vertical-align: middle;
   background: var(--accent);
   color: #fff;
   border-radius: 10px;
@@ -517,6 +568,142 @@ body {
   margin: 0 0 0.5rem;
   font-size: 0.9rem;
   font-weight: 600;
+}
+
+/* ── Service Refs Panel ──────────── */
+.service-refs-panel .hint {
+  font-size: 0.85rem;
+  color: var(--text-muted, #888);
+  margin-bottom: 1rem;
+}
+
+.ref-overrides-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.ref-override-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  padding: 0.5rem 0.75rem;
+  background: var(--surface, #1e1e2e);
+  border: 1px solid var(--border, #333);
+  border-radius: 6px;
+}
+
+.ref-target-name {
+  font-family: "JetBrains Mono", monospace;
+  font-weight: 600;
+  min-width: 10ch;
+}
+
+.ref-count {
+  font-size: 0.8rem;
+  color: var(--text-muted, #888);
+  min-width: 6ch;
+}
+
+.ref-select {
+  padding: 0.3rem 0.5rem;
+  border-radius: 4px;
+  border: 1px solid var(--border, #444);
+  background: var(--input-bg, #262636);
+  color: var(--text, #ccc);
+  font-size: 0.85rem;
+}
+
+.ref-custom-input {
+  flex: 1;
+  min-width: 16ch;
+  padding: 0.3rem 0.5rem;
+  border-radius: 4px;
+  border: 1px solid var(--border, #444);
+  background: var(--input-bg, #262636);
+  color: var(--text, #ccc);
+  font-size: 0.85rem;
+}
+
+/* ── YAML syntax highlighting ───── */
+.yaml-highlighted {
+  overflow-x: auto;
+  white-space: pre;
+}
+
+.yaml-highlighted code {
+  font-family: "JetBrains Mono", "Fira Code", "Cascadia Code", monospace;
+  font-size: 0.85rem;
+  line-height: 1.55;
+}
+
+/* Editor overlay: highlighted pre behind transparent textarea */
+.editor-highlight-wrap {
+  position: relative;
+  min-height: 16rem;
+}
+
+.editor-highlight-wrap .editor-highlight {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  padding: 0.75rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  pointer-events: none;
+  overflow: auto;
+  background: transparent;
+}
+
+.editor-highlight-wrap .editor-overlay {
+  position: relative;
+  color: transparent;
+  caret-color: var(--ink);
+  background: transparent;
+  resize: vertical;
+}
+
+.editor-highlight-wrap .editor-overlay::placeholder {
+  color: var(--text-muted, #555);
+}
+
+.hl-key {
+  color: #7dcfff;
+}
+
+.hl-string {
+  color: #9ece6a;
+}
+
+.hl-number {
+  color: #ff9e64;
+}
+
+.hl-boolean {
+  color: #ff9e64;
+}
+
+.hl-null {
+  color: #737aa2;
+  font-style: italic;
+}
+
+.hl-comment {
+  color: #565f89;
+  font-style: italic;
+}
+
+.hl-punctuation {
+  color: #89ddff;
+}
+
+.hl-separator {
+  color: #565f89;
+}
+
+.hl-anchor {
+  color: #bb9af7;
 }
 
 /* ── Footer ──────────────────────── */
