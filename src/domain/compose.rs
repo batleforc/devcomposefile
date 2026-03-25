@@ -121,7 +121,7 @@ fn normalize(raw: ComposeRaw, raw_value: &Value, document_index: usize) -> Compo
             entrypoint: parse_command_like(svc_raw.entrypoint),
             working_dir: svc_raw.working_dir,
             depends_on: parse_depends_on(svc_raw.depends_on),
-            post_start: parse_command_like(svc_raw.post_start),
+            post_start: parse_post_start(svc_raw.post_start),
         };
 
         project.unsupported.extend(collect_service_unsupported(
@@ -253,6 +253,37 @@ fn parse_command_like(value: Option<Value>) -> Vec<String> {
             .filter_map(|v| match v {
                 Value::String(s) => Some(s),
                 Value::Number(n) => Some(n.to_string()),
+                _ => None,
+            })
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// Parse Docker Compose `post_start` which can be:
+/// - A string: `post_start: "./bin/migrate"`
+/// - A list of strings: `post_start: ["./run1", "./run2"]`
+/// - A list of maps with `command` key (Docker Compose spec):
+///   ```yaml
+///   post_start:
+///     - command: ./bin/migrate
+///   ```
+fn parse_post_start(value: Option<Value>) -> Vec<String> {
+    let Some(raw) = value else {
+        return Vec::new();
+    };
+
+    match raw {
+        Value::String(s) => vec![s],
+        Value::Sequence(seq) => seq
+            .into_iter()
+            .filter_map(|v| match v {
+                Value::String(s) => Some(s),
+                Value::Number(n) => Some(n.to_string()),
+                Value::Mapping(m) => m
+                    .get(Value::String("command".to_string()))
+                    .and_then(|v| v.as_str())
+                    .map(ToString::to_string),
                 _ => None,
             })
             .collect(),

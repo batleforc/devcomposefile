@@ -1404,3 +1404,38 @@ services:
         .expect("post-start-app command");
     assert_eq!(cmd.exec.command_line, "npm run new");
 }
+
+#[test]
+fn post_start_map_form_with_command_key() {
+    let compose = r#"
+services:
+  api:
+    image: nginx
+    post_start:
+      - command: ./bin/migrate
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+        restart: true
+  rabbitmq:
+    image: rabbitmq:latest
+"#;
+    let projects = parse_compose_documents(compose).expect("parse");
+    let merged = merge_projects(projects);
+    let result = convert_to_devfile(merged, RuleSet::default(), None);
+
+    let cmd = result
+        .devfile
+        .commands
+        .iter()
+        .find(|c| c.id == "post-start-api")
+        .expect("post-start-api command should exist");
+    assert_eq!(cmd.exec.command_line, "./bin/migrate");
+
+    // depends_on should be parsed (rabbitmq)
+    let yaml_out = serde_yaml::to_string(&result.devfile).unwrap();
+    assert!(
+        yaml_out.contains("post-start-api"),
+        "YAML should contain post-start-api:\n{yaml_out}"
+    );
+}
