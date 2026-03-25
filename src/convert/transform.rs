@@ -64,13 +64,12 @@ pub fn convert_to_devfile(
             })
             .collect::<Vec<_>>();
 
-        let has_depends_on = !service.depends_on.is_empty();
         let has_container_cmd = !service.entrypoint.is_empty() || !service.command.is_empty();
 
-        // When a service has depends_on, keep the container alive with
-        // `tail -f /dev/null` and move the original command into a Devfile
-        // Command so it can be started explicitly after dependencies are ready.
-        let (command, args) = if has_depends_on && has_container_cmd {
+        // When a service has a command or entrypoint, keep the container alive
+        // with `tail -f /dev/null` and move the original command into a Devfile
+        // postStart Command so it runs after all containers are ready.
+        let (command, args) = if has_container_cmd {
             // Build Command from original entrypoint + command
             let mut cmd_parts = service.entrypoint.clone();
             cmd_parts.extend(service.command.clone());
@@ -98,8 +97,7 @@ pub fn convert_to_devfile(
             rule_traces.push(RuleTrace {
                 service: service_name.clone(),
                 description: format!(
-                    "Service has depends_on [{}]; container set to idle, original command moved to run-{service_name}",
-                    service.depends_on.join(", ")
+                    "Container set to idle, original command moved to postStart run-{service_name}"
                 ),
             });
 
@@ -109,17 +107,7 @@ pub fn convert_to_devfile(
                 Some(vec![String::from("-f"), String::from("/dev/null")]),
             )
         } else {
-            let command = if service.entrypoint.is_empty() {
-                None
-            } else {
-                Some(service.entrypoint.clone())
-            };
-            let args = if service.command.is_empty() {
-                None
-            } else {
-                Some(service.command.clone())
-            };
-            (command, args)
+            (None, None)
         };
 
         let endpoints = map_ports_to_endpoints(
@@ -145,16 +133,6 @@ pub fn convert_to_devfile(
                 memory_limit: None,
             }),
         });
-
-        // Emit diagnostic when a service has command but no depends_on,
-        // and also has a working_dir — the container runs the command
-        // automatically so no separate Devfile Command is generated.
-        if !has_depends_on && has_container_cmd && service.working_dir.is_some() {
-            diagnostics.push(format!(
-                "Service '{service_name}' has command/entrypoint in the container — \
-                 skipping run/debug command generation (working_dir preserved on container start)."
-            ));
-        }
     }
 
     for vol_name in &named_volumes {

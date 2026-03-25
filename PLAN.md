@@ -136,6 +136,13 @@ Build a pure frontend Rust + Leptos (WASM) app that converts one or more Docker 
 74. Update `expected-devfile.yml` fixture: web container now idles with `tail -f /dev/null`; a `commands` section contains `run-web`; an `events` section lists `postStart: [run-web]`.
 75. Add 3 integration tests: depends_on moves command to Devfile command and idles container, depends_on without command creates no run command, depends_on with entrypoint-only still creates command.
 
+### Phase 20 — All commands become postStart Devfile Commands ✅ *(depends on Phase 19)*
+
+76. Generalise the idle-container pattern from Phase 19: every service with a command or entrypoint (not just those with `depends_on`) gets its container set to `tail -f /dev/null` and the original command moved into a Devfile `Command` with a `postStart` event.
+77. Remove the `depends_on` gate from the command-generation branch in `transform.rs`; the `has_container_cmd` check alone is sufficient. Remove the now-obsolete diagnostic for services without `depends_on` that have commands.
+78. Update the 3 existing tests that asserted commands stayed on the container (`glob_rules_and_replace_mode_and_debug_commands`, `env_variable_references_become_devfile_variables`, `service_references_replaced_with_localhost`) to verify commands are in Devfile Commands instead.
+79. Add 3 integration tests: command without depends_on still creates postStart, service without command has no postStart, multiple services with commands all get postStart entries with correct shell quoting.
+
 ## Relevant Files
 
 | File | Purpose |

@@ -155,40 +155,30 @@ services:
         panic!("expected container");
     }
 
-    // Services whose command is already part of the container should
-    // NOT produce run/debug commands or postStart events.
-    assert!(
-        !result
-            .devfile
-            .commands
-            .iter()
-            .any(|c| c.id == "run-web-frontend"),
-        "run-web-frontend should not exist — command already on container"
-    );
-    assert!(
-        !result
-            .devfile
-            .commands
-            .iter()
-            .any(|c| c.id == "debug-web-frontend"),
-        "debug-web-frontend should not exist"
-    );
-    assert!(
-        !result
-            .devfile
-            .commands
-            .iter()
-            .any(|c| c.id == "run-web-backend"),
-        "run-web-backend should not exist — command already on container"
-    );
-    assert!(
-        !result
-            .devfile
-            .commands
-            .iter()
-            .any(|c| c.id == "debug-web-backend"),
-        "debug-web-backend should not exist"
-    );
+    // Services with commands get idle containers + postStart commands
+    let run_frontend = result
+        .devfile
+        .commands
+        .iter()
+        .find(|c| c.id == "run-web-frontend")
+        .expect("run-web-frontend should exist");
+    assert_eq!(run_frontend.exec.command_line, "npm start");
+
+    let run_backend = result
+        .devfile
+        .commands
+        .iter()
+        .find(|c| c.id == "run-web-backend")
+        .expect("run-web-backend should exist");
+    assert_eq!(run_backend.exec.command_line, "python app.py");
+
+    // Containers should be idling
+    if let ComponentSpec::Container(ref c) = frontend.spec {
+        assert_eq!(c.command.as_deref(), Some(&[String::from("tail")][..]));
+    }
+    if let ComponentSpec::Container(ref c) = backend.spec {
+        assert_eq!(c.command.as_deref(), Some(&[String::from("tail")][..]));
+    }
 
     // Rule traces recorded
     assert!(!result.rule_traces.is_empty());
@@ -741,10 +731,24 @@ services:
                 .iter()
                 .any(|e| e.name == "STATIC" && e.value == "no-vars-here")
         );
-        assert_eq!(ctr.args.as_ref().unwrap()[1], "--port={{PORT}}");
+        // Container idles; original command moved to postStart
+        assert_eq!(ctr.command.as_deref(), Some(&[String::from("tail")][..]));
+        assert_eq!(
+            ctr.args.as_deref(),
+            Some(&[String::from("-f"), String::from("/dev/null")][..])
+        );
     } else {
         panic!("expected container");
     }
+
+    // The original command with rewritten variables is in a Devfile Command
+    let run_cmd = result
+        .devfile
+        .commands
+        .iter()
+        .find(|c| c.id == "run-app")
+        .expect("run-app command");
+    assert!(run_cmd.exec.command_line.contains("--port={{PORT}}"));
 
     // The variables section should appear in serialized YAML
     let yaml_out = serde_yaml::to_string(&result.devfile).unwrap();
@@ -796,11 +800,20 @@ services:
                 .iter()
                 .any(|e| e.name == "SELF_REF" && e.value == "http://web:8080")
         );
-        // Command args should also be rewritten
-        assert_eq!(ctr.args.as_ref().unwrap()[1], "localhost:5432");
+        // Container idles; command moved to postStart
+        assert_eq!(ctr.command.as_deref(), Some(&[String::from("tail")][..]));
     } else {
         panic!("expected container");
     }
+
+    // The command with rewritten service references is in a Devfile Command
+    let run_cmd = result
+        .devfile
+        .commands
+        .iter()
+        .find(|c| c.id == "run-web")
+        .expect("run-web command");
+    assert!(run_cmd.exec.command_line.contains("localhost:5432"));
 
     // Rule traces should document the replacements
     assert!(
@@ -1201,4 +1214,136 @@ services:
         .find(|c| c.id == "run-worker")
         .expect("run-worker command");
     assert_eq!(cmd.exec.command_line, "python worker.py");
+}
+
+#[test]
+fn command_without_depends_on_still_creates_poststart() {
+    let compose = r#"
+services:
+  app:
+    image: node:20
+    command: ["npm", "start"]
+    working_dir: /workspace
+"#;
+    let projects = parse_compose_documents(compose).expect("parse");
+    let merged = merge_projects(projects);
+    let result = convert_to_devfile(merged, RuleSet::default(), None);
+
+    // Container should idle
+    let app = result
+        .devfile
+        .components
+        .iter()
+        .find(|c| c.name == "app")
+        .expect("app component");
+    if let ComponentSpec::Container(ref ctr) = app.spec {
+        assert_eq!(ctr.command.as_deref(), Some(&[String::from("tail")][..]));
+        assert_eq!(
+            ctr.args.as_deref(),
+            Some(&[String::from("-f"), String::from("/dev/null")][..])
+        );
+    } else {
+        panic!("expected container");
+    }
+
+    // A run-app command should exist
+    let cmd = result
+        .devfile
+        .commands
+        .iter()
+        .find(|c| c.id == "run-app")
+        .expect("run-app command");
+    assert_eq!(cmd.exec.component, "app");
+    assert_eq!(cmd.exec.command_line, "npm start");
+    assert_eq!(cmd.exec.working_dir.as_deref(), Some("/workspace"));
+
+    // postStart events
+    let events = result.devfile.events.as_ref().expect("events");
+    assert!(events.post_start.contains(&String::from("run-app")));
+}
+
+#[test]
+fn service_without_command_has_no_poststart() {
+    let compose = r#"
+services:
+  db:
+    image: postgres:16
+    ports:
+      - "5432:5432"
+"#;
+    let projects = parse_compose_documents(compose).expect("parse");
+    let merged = merge_projects(projects);
+    let result = convert_to_devfile(merged, RuleSet::default(), None);
+
+    let db = result
+        .devfile
+        .components
+        .iter()
+        .find(|c| c.name == "db")
+        .expect("db component");
+    if let ComponentSpec::Container(ref ctr) = db.spec {
+        assert!(ctr.command.is_none());
+        assert!(ctr.args.is_none());
+    } else {
+        panic!("expected container");
+    }
+
+    assert!(result.devfile.commands.is_empty());
+    assert!(result.devfile.events.is_none());
+}
+
+#[test]
+fn multiple_services_with_commands_all_get_poststart() {
+    let compose = r#"
+services:
+  web:
+    image: nginx:latest
+    command: ["nginx", "-g", "daemon off;"]
+  api:
+    image: node:20
+    entrypoint: ["node"]
+    command: ["server.js"]
+  worker:
+    image: python:3.12
+    entrypoint: ["python", "run worker.py"]
+"#;
+    let projects = parse_compose_documents(compose).expect("parse");
+    let merged = merge_projects(projects);
+    let result = convert_to_devfile(merged, RuleSet::default(), None);
+
+    // All 3 services should have commands
+    assert_eq!(result.devfile.commands.len(), 3);
+
+    let run_web = result
+        .devfile
+        .commands
+        .iter()
+        .find(|c| c.id == "run-web")
+        .unwrap();
+    // "daemon off;" has a space so it gets quoted
+    assert_eq!(run_web.exec.command_line, "nginx -g \"daemon off;\"");
+
+    let run_api = result
+        .devfile
+        .commands
+        .iter()
+        .find(|c| c.id == "run-api")
+        .unwrap();
+    assert_eq!(run_api.exec.command_line, "node server.js");
+
+    let run_worker = result
+        .devfile
+        .commands
+        .iter()
+        .find(|c| c.id == "run-worker")
+        .unwrap();
+    // "run worker.py" has a space so it gets quoted
+    assert_eq!(run_worker.exec.command_line, "python \"run worker.py\"");
+
+    // All referenced in postStart
+    let events = result.devfile.events.as_ref().expect("events");
+    assert_eq!(events.post_start.len(), 3);
+    assert!(events.post_start.contains(&String::from("run-web")));
+    assert!(events.post_start.contains(&String::from("run-api")));
+    assert!(events.post_start.contains(&String::from("run-worker")));
 }
