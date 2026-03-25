@@ -40,6 +40,38 @@ pub fn App() -> impl IntoView {
     let detected_refs = RwSignal::new(Vec::<DetectedRef>::new());
     let service_ref_overrides = RwSignal::new(BTreeMap::<String, String>::new());
 
+    // ── Theme toggle (persisted in localStorage) ──
+    let doc = web_sys::window().unwrap().document().unwrap();
+    let html = doc.document_element().unwrap();
+
+    let stored_theme = web_sys::window()
+        .and_then(|w| w.local_storage().ok().flatten())
+        .and_then(|ls| ls.get_item("theme").ok().flatten())
+        .unwrap_or_default();
+    let initial_dark = if stored_theme == "dark" || stored_theme == "light" {
+        stored_theme == "dark"
+    } else {
+        web_sys::window()
+            .and_then(|w| w.match_media("(prefers-color-scheme: dark)").ok().flatten())
+            .map(|m| m.matches())
+            .unwrap_or(false)
+    };
+    if initial_dark {
+        let _ = html.set_attribute("data-theme", "dark");
+    }
+    let is_dark = RwSignal::new(initial_dark);
+
+    let html_clone = html.clone();
+    let toggle_theme = move |_| {
+        let new_dark = !is_dark.get_untracked();
+        is_dark.set(new_dark);
+        let theme = if new_dark { "dark" } else { "light" };
+        let _ = html_clone.set_attribute("data-theme", theme);
+        if let Some(ls) = web_sys::window().and_then(|w| w.local_storage().ok().flatten()) {
+            let _ = ls.set_item("theme", theme);
+        }
+    };
+
     Effect::new(move |_| {
         if startup_rules_loaded.get() {
             return;
@@ -223,11 +255,16 @@ pub fn App() -> impl IntoView {
     view! {
         <main class="page">
             <header class="hero">
-                <h1>"Compose → Devfile"</h1>
-                <p>
-                    "Convert Docker Compose files into Devfile 2.3.0. "
-                    "Drag & drop, paste YAML, or fetch from a Git repository."
-                </p>
+                <div class="hero-text">
+                    <h1>"Compose → Devfile"</h1>
+                    <p>
+                        "Convert Docker Compose files into Devfile 2.3.0. "
+                        "Drag & drop, paste YAML, or fetch from a Git repository."
+                    </p>
+                </div>
+                <button class="theme-toggle" on:click=toggle_theme title="Toggle theme">
+                    {move || if is_dark.get() { "\u{2600}\u{fe0f}" } else { "\u{1f319}" }}
+                </button>
             </header>
 
             <GitRepoInput compose_input=compose_input git_context=git_context />
