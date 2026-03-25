@@ -128,6 +128,14 @@ Build a pure frontend Rust + Leptos (WASM) app that converts one or more Docker 
 69. Add "Parent Devfile" section to the visual rule editor (`rule_editor.rs`) with fields for registry ID, registry URL, URI (direct link), and version. Include hint text explaining precedence over inline IDE container.
 70. Add 5 integration tests: parent devfile via registry ID, parent devfile via URI, IDE image override takes precedence over parent, parent serialized correctly in YAML output, and parent rule merges correctly with base IDE container rule.
 
+### Phase 19 — depends_on: idle containers with deferred commands ✅ *(depends on Phase 18)*
+
+71. In `transform.rs`, detect services with non-empty `depends_on` **and** a command or entrypoint. Replace the container's command/args with `tail -f /dev/null` so it stays alive without running the original process.
+72. Move the original entrypoint + command into a Devfile `Command` (id `run-{service}`) with an `ExecCommand` targeting the same component. Shell-quote any argument containing spaces. Set `working_dir` from the service if present.
+73. Collect generated commands and emit an `events.postStart` list referencing them, so the workspace auto-starts the processes after the containers are ready. Skip redundant postStart entries that duplicate existing ones.
+74. Update `expected-devfile.yml` fixture: web container now idles with `tail -f /dev/null`; a `commands` section contains `run-web`; an `events` section lists `postStart: [run-web]`.
+75. Add 3 integration tests: depends_on moves command to Devfile command and idles container, depends_on without command creates no run command, depends_on with entrypoint-only still creates command.
+
 ## Relevant Files
 
 | File | Purpose |

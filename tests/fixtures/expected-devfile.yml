@@ -28,10 +28,17 @@ components:
           targetPort: 3000
           exposure: public
       command:
-        - /bin/sh
-        - -lc
+        - tail
       args:
-        - npm
-        - run
-        - dev
+        - -f
+        - /dev/null
       mountSources: true
+commands:
+  - id: run-web
+    exec:
+      component: web
+      commandLine: /bin/sh -lc npm run dev
+      workingDir: /workspace/web
+events:
+  postStart:
+    - run-web

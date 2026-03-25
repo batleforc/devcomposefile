@@ -1059,3 +1059,146 @@ fn parent_devfile_rule_merges_correctly() {
     // Base IDE container is still present (not cleared by parent rule)
     assert!(merged.base_ide_container.is_some());
 }
+
+#[test]
+fn depends_on_moves_command_to_devfile_command_and_idles_container() {
+    let compose = r#"
+services:
+  db:
+    image: postgres:16
+    ports:
+      - "5432:5432"
+  app:
+    image: node:20
+    command: ["npm", "start"]
+    entrypoint: ["/bin/sh", "-c"]
+    working_dir: /workspace
+    depends_on:
+      - db
+"#;
+    let projects = parse_compose_documents(compose).expect("parse");
+    let merged = merge_projects(projects);
+    let result = convert_to_devfile(merged, RuleSet::default(), None);
+
+    // app container should idle with tail -f /dev/null
+    let app = result
+        .devfile
+        .components
+        .iter()
+        .find(|c| c.name == "app")
+        .expect("app component");
+    if let ComponentSpec::Container(ref ctr) = app.spec {
+        assert_eq!(ctr.command.as_deref(), Some(&[String::from("tail")][..]));
+        assert_eq!(
+            ctr.args.as_deref(),
+            Some(&[String::from("-f"), String::from("/dev/null")][..])
+        );
+    } else {
+        panic!("expected container");
+    }
+
+    // A run-app command should exist with the original entrypoint + command
+    let cmd = result
+        .devfile
+        .commands
+        .iter()
+        .find(|c| c.id == "run-app")
+        .expect("run-app command");
+    assert_eq!(cmd.exec.component, "app");
+    assert_eq!(cmd.exec.command_line, "/bin/sh -c npm start");
+    assert_eq!(cmd.exec.working_dir.as_deref(), Some("/workspace"));
+
+    // postStart events should reference the command
+    let events = result.devfile.events.as_ref().expect("events");
+    assert!(events.post_start.contains(&String::from("run-app")));
+
+    // db has no depends_on, so its container should NOT have tail -f /dev/null
+    let db = result
+        .devfile
+        .components
+        .iter()
+        .find(|c| c.name == "db")
+        .expect("db component");
+    if let ComponentSpec::Container(ref ctr) = db.spec {
+        assert!(ctr.command.is_none());
+        assert!(ctr.args.is_none());
+    } else {
+        panic!("expected container");
+    }
+}
+
+#[test]
+fn depends_on_without_command_does_not_create_run_command() {
+    let compose = r#"
+services:
+  db:
+    image: postgres:16
+  app:
+    image: node:20
+    depends_on:
+      - db
+"#;
+    let projects = parse_compose_documents(compose).expect("parse");
+    let merged = merge_projects(projects);
+    let result = convert_to_devfile(merged, RuleSet::default(), None);
+
+    // app has depends_on but no command/entrypoint — no idle override needed
+    let app = result
+        .devfile
+        .components
+        .iter()
+        .find(|c| c.name == "app")
+        .expect("app component");
+    if let ComponentSpec::Container(ref ctr) = app.spec {
+        assert!(ctr.command.is_none());
+        assert!(ctr.args.is_none());
+    } else {
+        panic!("expected container");
+    }
+
+    // No commands generated
+    assert!(result.devfile.commands.is_empty());
+}
+
+#[test]
+fn depends_on_entrypoint_only_creates_command() {
+    let compose = r#"
+services:
+  redis:
+    image: redis:7
+  worker:
+    image: python:3.12
+    entrypoint: ["python", "worker.py"]
+    depends_on:
+      - redis
+"#;
+    let projects = parse_compose_documents(compose).expect("parse");
+    let merged = merge_projects(projects);
+    let result = convert_to_devfile(merged, RuleSet::default(), None);
+
+    // worker container idles
+    let worker = result
+        .devfile
+        .components
+        .iter()
+        .find(|c| c.name == "worker")
+        .expect("worker component");
+    if let ComponentSpec::Container(ref ctr) = worker.spec {
+        assert_eq!(ctr.command.as_deref(), Some(&[String::from("tail")][..]));
+        assert_eq!(
+            ctr.args.as_deref(),
+            Some(&[String::from("-f"), String::from("/dev/null")][..])
+        );
+    } else {
+        panic!("expected container");
+    }
+
+    // run-worker command has the entrypoint
+    let cmd = result
+        .devfile
+        .commands
+        .iter()
+        .find(|c| c.id == "run-worker")
+        .expect("run-worker command");
+    assert_eq!(cmd.exec.command_line, "python worker.py");
+}
