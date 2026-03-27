@@ -18,7 +18,7 @@ ARG PUBLIC_URL=/
 RUN trunk build --release --public-url "${PUBLIC_URL}"
 
 # ── Stage 2: Download static-web-server ───────────────────────
-FROM docker.io/joseluisq/static-web-server:2@sha256:34bb160fd62d2145dabd0598f36352653ec58cf80a8d58c8cd2617097d34564d AS sws
+FROM docker.io/joseluisq/static-web-server:2@sha256:2d67e47e22172235e339908777e692006ffdcf42dc4c531aff5d4337a7559a1e AS sws
 
 # ── Stage 3: Minimal runtime — distroless, no shell, no CVE ──
 FROM gcr.io/distroless/cc-debian12:nonroot@sha256:7e5b8df2f4d36f5599ef4ab856d7d444922531709becb03f3368c6d797d0a5eb
