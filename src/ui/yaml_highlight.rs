@@ -82,11 +82,8 @@ fn find_yaml_colon(s: &str) -> Option<usize> {
         match b {
             b'\'' if !in_double => in_single = !in_single,
             b'"' if !in_single => in_double = !in_double,
-            b':' if !in_single && !in_double => {
-                // Must be followed by space or end of string
-                if i + 1 >= bytes.len() || bytes[i + 1] == b' ' {
-                    return Some(i);
-                }
+            b':' if !in_single && !in_double && (i + 1 >= bytes.len() || bytes[i + 1] == b' ') => {
+                return Some(i);
             }
             _ => {}
         }

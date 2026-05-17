@@ -10,6 +10,7 @@ pub enum GitProvider {
     GitHub,
     GitLab,
     Bitbucket,
+    Forgejo,
 }
 
 /// Parsed repository reference.
@@ -20,6 +21,7 @@ pub struct RepoRef {
     pub repo: String,
     pub git_ref: String,
     pub path: String,
+    pub host: Option<String>, // Optional host for self-hosted instances (e.g. gitlab.example.com)
 }
 
 /// Parse a user-provided URL + optional overrides into a `RepoRef`.
@@ -62,9 +64,7 @@ pub fn parse_repo_url(
     } else if host.contains("bitbucket.org") {
         GitProvider::Bitbucket
     } else {
-        return Err(format!(
-            "Unsupported Git host `{host}`. Supported: github.com, gitlab.com, bitbucket.org"
-        ));
+        GitProvider::Forgejo // Default to Forgejo for unknown hosts, allowing self-hosted instances
     };
 
     let segments: Vec<&str> = remainder.split('/').filter(|s| !s.is_empty()).collect();
@@ -143,6 +143,7 @@ pub fn parse_repo_url(
         repo,
         git_ref,
         path,
+        host: Some(host), // Store the original host for potential use in self-hosted instances
     })
 }
 
@@ -165,6 +166,13 @@ pub fn raw_content_url(repo_ref: &RepoRef) -> String {
             format!(
                 "https://bitbucket.org/{}/{}/raw/{}/{}",
                 repo_ref.owner, repo_ref.repo, repo_ref.git_ref, repo_ref.path
+            )
+        }
+        GitProvider::Forgejo => {
+            let host = repo_ref.host.as_deref().unwrap_or("forgejo.com");
+            format!(
+                "https://{}/{}/{}/raw/{}/{}",
+                host, repo_ref.owner, repo_ref.repo, repo_ref.git_ref, repo_ref.path
             )
         }
     }
@@ -223,6 +231,33 @@ mod tests {
     }
 
     #[test]
+    fn parse_forgejo_url() {
+        let r = parse_repo_url(
+            "https://forgejo.com/group/repo/blob/main/compose.yml",
+            None,
+            None,
+        )
+        .unwrap();
+        assert_eq!(r.provider, GitProvider::Forgejo);
+        assert_eq!(r.git_ref, "main");
+        assert_eq!(r.path, "compose.yml");
+    }
+
+    #[test]
+    fn parse_self_hosted_forgejo_url() {
+        let r = parse_repo_url(
+            "https://git.example.com/group/repo/blob/main/compose.yml",
+            None,
+            None,
+        )
+        .unwrap();
+        assert_eq!(r.provider, GitProvider::Forgejo);
+        assert_eq!(r.host.as_deref(), Some("git.example.com"));
+        assert_eq!(r.git_ref, "main");
+        assert_eq!(r.path, "compose.yml");
+    }
+
+    #[test]
     fn overrides_take_precedence() {
         let r = parse_repo_url(
             "https://github.com/acme/webapp/blob/main/old.yml",
@@ -241,13 +276,6 @@ mod tests {
     }
 
     #[test]
-    fn rejects_unsupported_host() {
-        let r = parse_repo_url("https://sourcehut.org/acme/repo", None, None);
-        assert!(r.is_err());
-        assert!(r.unwrap_err().contains("Unsupported Git host"));
-    }
-
-    #[test]
     fn rejects_missing_scheme() {
         let r = parse_repo_url("github.com/acme/repo", None, None);
         assert!(r.is_err());
@@ -261,6 +289,7 @@ mod tests {
             repo: String::from("app"),
             git_ref: String::from("main"),
             path: String::from("docker-compose.yml"),
+            host: None,
         };
         assert_eq!(
             raw_content_url(&r),
@@ -276,6 +305,7 @@ mod tests {
             repo: String::from("proj"),
             git_ref: String::from("dev"),
             path: String::from("compose.yml"),
+            host: None,
         };
         assert_eq!(
             raw_content_url(&r),
@@ -291,6 +321,7 @@ mod tests {
             repo: String::from("svc"),
             git_ref: String::from("v1"),
             path: String::from("infra/docker-compose.yml"),
+            host: None,
         };
         assert_eq!(
             raw_content_url(&r),

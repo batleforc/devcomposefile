@@ -206,11 +206,7 @@ fn replace_service_hostnames(
         }
 
         // Repeatedly scan and replace to handle multiple occurrences
-        loop {
-            let Some(pos) = result.find(name.as_str()) else {
-                break;
-            };
-
+        while let Some(pos) = result.find(name.as_str()) {
             if !is_hostname_reference(&result, pos, name.len()) {
                 // Only skip this exact occurrence — search for more after it
                 let after = pos + name.len();

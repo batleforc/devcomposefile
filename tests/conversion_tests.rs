@@ -641,6 +641,7 @@ services:
         repo: String::from("app"),
         git_ref: String::from("main"),
         path: String::from("docker-compose.yml"),
+        host: None,
     });
 
     let resolution = resolve_includes(docs, &context, &BTreeMap::new());

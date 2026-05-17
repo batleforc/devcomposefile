@@ -161,6 +161,7 @@ fn resolve_git_path(base: &RepoRef, include_path: &str) -> RepoRef {
         repo: base.repo.clone(),
         git_ref: base.git_ref.clone(),
         path: simplified,
+        host: base.host.clone(),
     }
 }
 
@@ -212,6 +213,7 @@ mod tests {
             repo: String::from("app"),
             git_ref: String::from("main"),
             path: String::from("deploy/docker-compose.yml"),
+            host: None,
         };
 
         let resolved = resolve_git_path(&base, "./other.yml");
@@ -229,6 +231,7 @@ mod tests {
             repo: String::from("app"),
             git_ref: String::from("main"),
             path: String::from("docker-compose.yml"),
+            host: None,
         };
 
         let resolved = resolve_git_path(&base, "subdir/other.yml");
@@ -273,6 +276,7 @@ mod tests {
             repo: String::from("app"),
             git_ref: String::from("main"),
             path: String::from("docker-compose.yml"),
+            host: None,
         });
 
         let result = resolve_includes(vec![project], &context, &BTreeMap::new());
