@@ -1,5 +1,5 @@
 # ── Stage 1: Build WASM with Trunk ────────────────────────────
-FROM rust:1-bookworm@sha256:6ae102bdbf528294bc79ad6e1fae682f6f7c2a6e6621506ba959f9685b308a55 AS builder
+FROM rust:1-bookworm@sha256:503651ea31e66ecb74623beabde781059a5978df1595a9e8ed03974d5fec1bf0 AS builder
 
 ARG TRUNK_VERSION=0.21.14
 
