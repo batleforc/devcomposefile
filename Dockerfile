@@ -21,7 +21,7 @@ RUN trunk build --release --public-url "${PUBLIC_URL}"
 FROM docker.io/joseluisq/static-web-server:2@sha256:2d67e47e22172235e339908777e692006ffdcf42dc4c531aff5d4337a7559a1e AS sws
 
 # ── Stage 3: Minimal runtime — distroless, no shell, no CVE ──
-FROM gcr.io/distroless/cc-debian12:nonroot@sha256:e2d29aec8061843706b7e484c444f78fafb05bfe47745505252b1769a05d14f1
+FROM gcr.io/distroless/cc-debian12:nonroot@sha256:bd2899c12b335c827750ccf2359879eab09c09b206023dcebea408947d54127c
 
 COPY --from=sws /static-web-server /static-web-server
 COPY --from=builder /app/dist /public
